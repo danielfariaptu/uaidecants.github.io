@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uai Decants - Pedido</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header> <img src="Uai.png" alt="Uai Decants Logo" class="logo">
+        <h1>Monte seu pedido</h1>
+    </header>
+    <main>
+        <table>
+            <thead>
+                <tr>
+                    <th>Perfume</th>
+                    <th>Preço (R$)</th>
+                    <th>Quantidade</th>
+                </tr>
+            </thead>
+            <tbody id="product-list"> <!-- Produtos serão inseridos via JS --> </tbody>
+        </table>
+        <div class="total-container"> <strong>Total: R$ <span id="total">0,00</span></strong> </div> <button
+            id="checkout">Finalizar Pedido</button>
+    </main>
+    <div id="summary-modal" class="modal">
+        <div class="modal-content"> <span class="close">&times;</span>
+            <h2>Resumo do Pedido</h2>
+            <pre id="order-summary"></pre>
+            <p><strong>Pagamento via Pix:</strong></p> <a id="payment-link" href="#" target="_blank"
+                class="pay-btn">Pagar Agora</a>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
