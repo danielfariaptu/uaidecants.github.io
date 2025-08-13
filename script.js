@@ -1,70 +1,88 @@
-// Lista de perfumes de exemplo
-const products = [
-  { name: "Perfume A", price: 25 },
-  { name: "Perfume B", price: 30 },
-  { name: "Perfume C", price: 20 }
-];
+let produtos = [];
+let carrinho = [];
 
-const productList = document.getElementById("product-list");
-const totalSpan = document.getElementById("total");
-let quantities = {};
+// Carrega lista do JSON
+fetch('produtos.json')
+    .then(res => res.json())
+    .then(data => {
+        produtos = data;
+        mostrarProdutos();
+    });
 
-function renderProducts() {
-  products.forEach((p, index) => {
-    const row = document.createElement("tr");
+function mostrarProdutos() {
+    const lista = document.getElementById('lista-produtos');
+    lista.innerHTML = '';
+    produtos.forEach((produto, index) => {
+        let volumes = Object.keys(produto.precos)
+            .map(v => `<option value="${v}">${v} - R$ ${produto.precos[v].toFixed(2)}</option>`)
+            .join('');
 
-    row.innerHTML = `
-      <td>${p.name}</td>
-      <td>${p.price.toFixed(2)}</td>
-      <td>
-        <input type="number" min="0" value="0" data-index="${index}" class="qty-input">
-      </td>
-    `;
-
-    productList.appendChild(row);
-  });
+        lista.innerHTML += `
+            <div style="border:1px solid #ccc;margin:10px;padding:10px;">
+                <h3>${produto.nome}</h3>
+                <label>Volume:
+                    <select id="volume-${index}">
+                        ${volumes}
+                    </select>
+                </label>
+                <button onclick="adicionarAoCarrinho(${index})">Adicionar ao Carrinho</button>
+            </div>
+        `;
+    });
 }
 
-function updateTotal() {
-  let total = 0;
-  document.querySelectorAll(".qty-input").forEach(input => {
-    const qty = parseInt(input.value) || 0;
-    const index = input.dataset.index;
-    total += qty * products[index].price;
-    quantities[products[index].name] = qty;
-  });
-  totalSpan.textContent = total.toFixed(2);
-}
+function adicionarAoCarrinho(index) {
+    const volume = document.getElementById(`volume-${index}`).value;
+    const preco = produtos[index].precos[volume];
 
-function showSummary() {
-  let summary = "";
-  let total = 0;
-  for (let name in quantities) {
-    if (quantities[name] > 0) {
-      const product = products.find(p => p.name === name);
-      const subtotal = product.price * quantities[name];
-      summary += `${name} - ${quantities[name]}x - R$ ${subtotal.toFixed(2)}\n`;
-      total += subtotal;
+    let itemExistente = carrinho.find(item => item.nome === produtos[index].nome && item.volume === volume);
+
+    if (itemExistente) {
+        itemExistente.quantidade++;
+    } else {
+        carrinho.push({
+            nome: produtos[index].nome,
+            volume: volume,
+            preco: preco,
+            quantidade: 1
+        });
     }
-  }
-  summary += `\nTOTAL: R$ ${total.toFixed(2)}`;
-  document.getElementById("order-summary").textContent = summary;
 
-  // Link de pagamento (substituir pelo seu)
-  document.getElementById("payment-link").href = "https://seu-link-de-pagamento.com";
-
-  document.getElementById("summary-modal").style.display = "block";
+    atualizarCarrinho();
 }
 
-document.addEventListener("input", e => {
-  if (e.target.classList.contains("qty-input")) {
-    updateTotal();
-  }
+function atualizarCarrinho() {
+    const listaCarrinho = document.getElementById('itensCarrinho');
+    listaCarrinho.innerHTML = '';
+    let total = 0;
+
+    carrinho.forEach((item, i) => {
+        total += item.preco * item.quantidade;
+        listaCarrinho.innerHTML += `
+            <li>
+                ${item.nome} (${item.volume}) - R$ ${item.preco.toFixed(2)} x ${item.quantidade}
+                <button onclick="removerItem(${i})">❌</button>
+            </li>
+        `;
+    });
+
+    document.getElementById('totalCarrinho').innerText = total.toFixed(2);
+}
+
+function removerItem(i) {
+    carrinho.splice(i, 1);
+    atualizarCarrinho();
+}
+
+// Abrir/fechar carrinho
+document.getElementById('abrirCarrinho').addEventListener('click', () => {
+    const carrinhoDiv = document.getElementById('carrinho');
+    carrinhoDiv.style.display = carrinhoDiv.style.display === 'none' ? 'block' : 'none';
 });
 
-document.getElementById("checkout").addEventListener("click", showSummary);
-document.querySelector(".close").addEventListener("click", () => {
-  document.getElementById("summary-modal").style.display = "none";
+// Fechar pedido
+document.getElementById('fecharPedido').addEventListener('click', () => {
+    let resumo = carrinho.map(item => `${item.nome} (${item.volume}) x${item.quantidade}`).join('\n');
+    let total = document.getElementById('totalCarrinho').innerText;
+    alert(`Resumo do Pedido:\n${resumo}\n\nTotal: R$ ${total}`);
 });
-
-renderProducts();

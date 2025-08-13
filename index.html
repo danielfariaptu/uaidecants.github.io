@@ -9,9 +9,26 @@
 </head>
 
 <body>
-    <header> <img src="Uai.png" alt="Uai Decants Logo" class="logo">
+   
+    <header> 
+         <img src="/images/Logo.png" alt="Uai Decants" style="width:10%;">
+
+    <button id="abrirCarrinho" style="background:#003366; color:white; border:none; font-size:18px; display:flex; align-items:center; gap:5px; cursor:pointer;">
+        <span style="font-size:22px;">🛍️</span> Carrinho
+    </button>
+
         <h1>Monte seu pedido</h1>
     </header>
+
+    <div id="lista-produtos"></div>
+
+<!-- Carrinho -->
+<div id="carrinho" style="display:none;position:fixed;top:0;right:0;width:300px;height:100%;background:#fff;border-left:2px solid #ccc;padding:10px;overflow-y:auto;">
+    <h2>Carrinho</h2>
+    <ul id="itensCarrinho"></ul>
+    <p><strong>Total: R$ <span id="totalCarrinho">0.00</span></strong></p>
+    <button id="fecharPedido">Fechar Pedido</button>
+</div>
     <main>
         <table>
             <thead>

@@ -1,6 +1,6 @@
 body {
   font-family: Arial, sans-serif;
-  background-color: #FFD500;
+  background-color: #ffcd1e;
   margin: 0;
   padding: 0;
 }
@@ -15,16 +15,16 @@ header {
 }
 
 table {
-  width: 90%;
+  width: 50%;
   margin: 20px auto;
   border-collapse: collapse;
-  background: white;
+  background: #e2d7b9;
 }
 
 th, td {
   padding: 10px;
   text-align: center;
-  border: 1px solid #ccc;
+  border: 1px solid #0026ff;
 }
 
 .total-container {
