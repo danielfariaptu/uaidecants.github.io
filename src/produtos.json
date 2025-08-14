@@ -1,20 +1,26 @@
 [
   {
-    "nome": "Perfume 1",
+    "nome": "Rasasi Hawas Ice",
+    "volumeInicial": 100,
     "precos": {
       "2ml": 20,
       "5ml": 45,
       "8ml": 70,
       "15ml": 120
-    }
+    },
+    "urlFragrantica": "https://www.fragrantica.com.br/perfume/Viktor-Rolf/Spicebomb-Extreme-30499.html",
+    "imagem": "/src/images/SpicebombExtreme.jpg"
   },
   {
     "nome": "Perfume 2",
+    "volumeInicial": 100,
     "precos": {
       "2ml": 25,
       "5ml": 50,
       "8ml": 80,
       "15ml": 150
-    }
+    },
+    "urlFragrantica": "",
+    "imagem": "/src/images/Perfume2.jpg"
   }
-]
+] 
