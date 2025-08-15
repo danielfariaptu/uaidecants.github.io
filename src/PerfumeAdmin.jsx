@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 const API = "https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes";
 
 export default function PerfumeAdmin() {
-  
+
   const [perfumes, setPerfumes] = useState([]);
   const [novo, setNovo] = useState({
     nome: "",
@@ -22,17 +22,16 @@ export default function PerfumeAdmin() {
       .then(res => res.json())
       .then(data => setPerfumes(Array.isArray(data) ? data : []));
   }, []);
-
   function criarPerfume(e) {
     e.preventDefault();
     fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(novo)
+      body: JSON.stringify(novo) // <-- use 'novo' aqui!
     })
       .then(res => res.json())
-      .then(p => {
-        setPerfumes([...perfumes, p]);
+      .then(data => {
+        setPerfumes([...perfumes, data]);
         setNovo({
           nome: "",
           volumeInicial: "",
@@ -43,8 +42,13 @@ export default function PerfumeAdmin() {
           urlFragrantica: "",
           imagem: ""
         });
+      })
+      .catch(err => {
+        console.error("Erro ao cadastrar perfume:", err);
+        alert("Erro ao cadastrar perfume!");
       });
   }
+
 
   function salvarEdicao(id) {
     fetch(`${API}/${id}`, {
@@ -111,14 +115,22 @@ export default function PerfumeAdmin() {
               <td>
                 {editando && editando.id === p.id ? (
                   <>
-                    <input value={editando.precos2ml} onChange={e => setEditando({ ...editando, precos2ml: e.target.value })} placeholder="2ml" />
-                    <input value={editando.precos5ml} onChange={e => setEditando({ ...editando, precos5ml: e.target.value })} placeholder="5ml" />
-                    <input value={editando.precos8ml} onChange={e => setEditando({ ...editando, precos8ml: e.target.value })} placeholder="8ml" />
-                    <input value={editando.precos15ml} onChange={e => setEditando({ ...editando, precos15ml: e.target.value })} placeholder="15ml" />
+                    <input value={editando.nome} onChange={e => setEditando({ ...editando, nome: e.target.value })} placeholder="Nome" />
+                    <input value={editando.volumeInicial} onChange={e => setEditando({ ...editando, volumeInicial: e.target.value })} placeholder="Volume Inicial" />
+                    <input value={editando.precos2ml} onChange={e => setEditando({ ...editando, precos2ml: e.target.value })} placeholder="Preço 2ml" />
+                    <input value={editando.precos5ml} onChange={e => setEditando({ ...editando, precos5ml: e.target.value })} placeholder="Preço 5ml" />
+                    <input value={editando.precos8ml} onChange={e => setEditando({ ...editando, precos8ml: e.target.value })} placeholder="Preço 8ml" />
+                    <input value={editando.precos15ml} onChange={e => setEditando({ ...editando, precos15ml: e.target.value })} placeholder="Preço 15ml" />
+                    <input value={editando.urlFragrantica} onChange={e => setEditando({ ...editando, urlFragrantica: e.target.value })} placeholder="URL Fragrantica" />
+                    <input value={editando.imagem} onChange={e => setEditando({ ...editando, imagem: e.target.value })} placeholder="URL Imagem" />
                   </>
                 ) : (
                   <>
-                    2ml: {p.precos2ml} | 5ml: {p.precos5ml} | 8ml: {p.precos8ml} | 15ml: {p.precos15ml}
+                    {p.nome}<br />
+                    {p.volumeInicial}<br />
+                    2ml: {p.precos2ml} | 5ml: {p.precos5ml} | 8ml: {p.precos8ml} | 15ml: {p.precos15ml}<br />
+                    Fragrantica: {p.urlFragrantica}<br />
+                    Imagem: {p.imagem}
                   </>
                 )}
               </td>

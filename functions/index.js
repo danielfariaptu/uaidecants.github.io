@@ -7,6 +7,13 @@ const admin = require("firebase-admin");
 // Inicializa o Firebase Admin
 admin.initializeApp();
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
 const db = admin.firestore();
 
 const app = express();

@@ -80,10 +80,11 @@ function LoginAdmin({ onLogin, adminLogado }) {
       });
       const data = await resp.json();
       if (data.success) {
-        onLogin();
+        onLogin(true);
         setSenhaAdmin("");
+        setErroLogin("");
       } else {
-        setErroLogin("Senha incorreta!");
+        setErroLogin(data.message || "Senha incorreta!");
       }
     } catch (err) {
       setErroLogin("Erro ao conectar ao servidor.");
@@ -416,7 +417,10 @@ export default function App() {
             path="/login-admin-daniel-faria"
             element={
               <LoginAdmin
-                onLogin={() => setAdminLogado(true)}
+                onLogin={logado => {
+                  setAdminLogado(!!logado);
+                  localStorage.setItem("adminLogado", logado ? "true" : "false");
+                }}
                 adminLogado={adminLogado}
               />
             }
