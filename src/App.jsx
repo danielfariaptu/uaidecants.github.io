@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import PerfumeAdmin from "./PerfumeAdmin.jsx";
 
 // Função para transformar os dados do Sheets
 function transformarProdutos(dadosSheets) {
@@ -63,8 +65,65 @@ function Carrinho({ aberto, itens, onFechar, onRemover }) {
   );
 }
 
+function LoginAdmin({ onLogin, adminLogado }) {
+  const [senhaAdmin, setSenhaAdmin] = useState("");
+  const [erroLogin, setErroLogin] = useState("");
+
+  async function handleLoginAdmin(e) {
+    e.preventDefault();
+    setErroLogin("");
+    try {
+      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/login-admin-daniel-faria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ senha: senhaAdmin })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        onLogin();
+        setSenhaAdmin("");
+      } else {
+        setErroLogin("Senha incorreta!");
+      }
+    } catch (err) {
+      setErroLogin("Erro ao conectar ao servidor.");
+    }
+  }
+
+  if (adminLogado) {
+    return (
+      <div className="container mt-4">
+        <h3>Painel Admin</h3>
+        <button
+          className="btn btn-outline-danger mb-3"
+          onClick={() => onLogin(false)}
+        >
+          Sair
+        </button>
+        <PerfumeAdmin />
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleLoginAdmin} style={{ maxWidth: 300, margin: "32px auto" }}>
+      <h3>Login Admin</h3>
+      <input
+        type="password"
+        className="form-control mb-2"
+        placeholder="Senha do admin"
+        value={senhaAdmin}
+        onChange={e => setSenhaAdmin(e.target.value)}
+      />
+      <button type="submit" className="btn btn-primary w-100">Entrar</button>
+      {erroLogin && <div className="text-danger mt-2">{erroLogin}</div>}
+    </form>
+  );
+}
+
 export default function App() {
   // Carregar estados do localStorage
+
   const [ordem, setOrdem] = useState(() => localStorage.getItem("ordem") || "alfabetica");
   const [pagina, setPagina] = useState(() => Number(localStorage.getItem("pagina")) || 1);
   const [produtos, setProdutos] = useState([]);
@@ -78,6 +137,15 @@ export default function App() {
     return salvo ? JSON.parse(salvo) : {};
   });
   const itensPorPagina = 6;
+
+  // Estado para login admin
+  const [adminLogado, setAdminLogado] = useState(() => {
+    return localStorage.getItem("adminLogado") === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("adminLogado", adminLogado ? "true" : "false");
+  }, [adminLogado]);
 
   // Persistir estados no localStorage
   useEffect(() => {
@@ -133,42 +201,42 @@ export default function App() {
   }
 
   function adicionarAoCarrinho(produto, idx) {
-  const volume = volumesSelecionados[idx] || "2ml";
-  const preco = produto.precos[volume];
-  const mlVenda = parseInt(volume.replace("ml", ""));
-  const estoqueAtual = produto.volumeRestante;
+    const volume = volumesSelecionados[idx] || "2ml";
+    const preco = produto.precos[volume];
+    const mlVenda = parseInt(volume.replace("ml", ""));
+    const estoqueAtual = produto.volumeRestante;
 
-  if (estoqueAtual < mlVenda) return;
+    if (estoqueAtual < mlVenda) return;
 
-  const itemIdx = carrinho.findIndex(
-    item => item.nome === produto.nome && item.volume === volume
-  );
-  if (itemIdx >= 0) {
-    const novoCarrinho = [...carrinho];
-    novoCarrinho[itemIdx].quantidade += 1;
-    setCarrinho(novoCarrinho);
-  } else {
-    setCarrinho([
-      ...carrinho,
-      {
-        nome: produto.nome,
-        volume,
-        preco,
-        quantidade: 1
-      }
-    ]);
+    const itemIdx = carrinho.findIndex(
+      item => item.nome === produto.nome && item.volume === volume
+    );
+    if (itemIdx >= 0) {
+      const novoCarrinho = [...carrinho];
+      novoCarrinho[itemIdx].quantidade += 1;
+      setCarrinho(novoCarrinho);
+    } else {
+      setCarrinho([
+        ...carrinho,
+        {
+          nome: produto.nome,
+          volume,
+          preco,
+          quantidade: 1
+        }
+      ]);
+    }
+
+    const novosProdutos = [...produtos];
+    const nomeProduto = produto.nome;
+    const idxReal = novosProdutos.findIndex(p => p.nome === nomeProduto);
+    if (idxReal >= 0) {
+      novosProdutos[idxReal].volumeRestante -= mlVenda;
+      setProdutos(novosProdutos);
+    }
+
+    setCarrinhoAberto(true); // Abre o carrinho ao adicionar
   }
-
-  const novosProdutos = [...produtos];
-  const nomeProduto = produto.nome;
-  const idxReal = novosProdutos.findIndex(p => p.nome === nomeProduto);
-  if (idxReal >= 0) {
-    novosProdutos[idxReal].volumeRestante -= mlVenda;
-    setProdutos(novosProdutos);
-  }
-
-  setCarrinhoAberto(true); // Abre o carrinho ao adicionar
-}
 
   function removerDoCarrinho(idx) {
     const item = carrinho[idx];
@@ -187,159 +255,182 @@ export default function App() {
   const totalItens = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
 
   return (
-    <div className="container py-4">
-      <header className="d-flex align-items-center mb-4">
-        <img src="/images/Logo.png" alt="Uai Decants" style={{ width: "80px", marginRight: "16px" }} />
-        <h1 className="flex-grow-1">Monte seu pedido</h1>
-        <button
-          className="btn btn-primary position-relative"
-          onClick={() => setCarrinhoAberto(true)}
-        >
-          <span style={{ fontSize: "22px" }}>🛍️</span> Carrinho
-          <span className="badge bg-warning text-dark position-absolute top-0 start-100 translate-middle rounded-pill">
-            {totalItens}
-          </span>
-        </button>
-      </header>
+    <BrowserRouter>
+      <div className="container py-4">
+        < header className="d-flex align-items-center mb-4">
+          <a href="/.."> <img src="/images/Logo.png" alt="Uai Decants" style={{ width: "80px", marginRight: "16px" }} /></a>
+          <h1 className="flex-grow-1">Monte seu pedido</h1>
+          {/* Removido o botão/link Admin */}
+          <button
+            className="btn btn-primary position-relative"
+            onClick={() => setCarrinhoAberto(true)}
+          >
+            <span style={{ fontSize: "22px" }}>🛍️</span> Carrinho
+            <span className="badge bg-warning text-dark position-absolute top-0 start-100 translate-middle rounded-pill">
+              {totalItens}
+            </span>
+          </button>
+        </header>
 
-      {/* Controle de ordenação */}
-      <div className="d-flex justify-content-end align-items-center mb-3 gap-2">
-        <label className="form-label mb-0">Ordenar por:</label>
-        <select
-          className="form-select w-auto"
-          value={ordem}
-          onChange={e => {
-            setOrdem(e.target.value);
-            setPagina(1);
-          }}
-        >
-          <option value="alfabetica">Alfabética</option>
-          <option value="maisCaros">Mais caros</option>
-          <option value="maisBaratos">Mais baratos</option>
-        </select>
-      </div>
+        <Routes>
 
-      {/* Renderização dos cards paginados */}
-      <main className="row">
-        {produtosPaginados.map((produto, idx) => {
-          const cardInativo = produto.volumeRestante < 10;
-          return (
-            <div key={inicio + idx} className="col-md-4 mb-4">
-              <div className={`card h-100 position-relative overflow-hidden ${cardInativo ? "bg-light text-muted" : ""}`}>
-                {/* Imagem com nome sobreposto */}
-                <div style={{ position: "relative", width: "100%", height: "140px" }}>
-                  <img
-                    src={produto.imagem}
-                    alt={produto.nome}
-                    style={{
-                      width: "100%",
-                      height: "140px",
-                      objectFit: "cover",
-                      borderRadius: "8px"
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      bottom: "0",
-                      left: "0",
-                      width: "100%",
-                      background: "rgba(0,0,0,0.5)",
-                      color: "#fff",
-                      padding: "8px 12px",
-                      fontWeight: "bold",
-                      fontSize: "1.2em",
-                      borderBottomLeftRadius: "8px",
-                      borderBottomRightRadius: "8px",
-                      display: "flex",
-                      alignItems: "center"
+          <Route
+            path="/"
+            element={
+              <>
+                {/* Controle de ordenação */}
+                <div className="d-flex justify-content-end align-items-center mb-3 gap-2">
+                  <label className="form-label mb-0">Ordenar por:</label>
+                  <select
+                    className="form-select w-auto"
+                    value={ordem}
+                    onChange={e => {
+                      setOrdem(e.target.value);
+                      setPagina(1);
                     }}
                   >
-                    {produto.nome}
-                    {produto.urlFragrantica &&
-                      produto.urlFragrantica.trim() !== "" && (
-                        <button
-                          className="btn btn-link p-0 ms-2"
-                          title="Ver no Fragrantica"
-                          onClick={() => window.open(produto.urlFragrantica, "_blank")}
-                          style={{ verticalAlign: "middle" }}
-                        >
-                          <img
-                            src="https://www.fragrantica.com.br/favicon.ico"
-                            alt="Fragrantica"
-                            style={{ width: "22px", marginLeft: "8px" }}
-                          />
+                    <option value="alfabetica">Alfabética</option>
+                    <option value="maisCaros">Mais caros</option>
+                    <option value="maisBaratos">Mais baratos</option>
+                  </select>
+                </div>
+
+                {/* Renderização dos cards paginados */}
+                <main className="row">
+                  {produtosPaginados.map((produto, idx) => {
+                    const cardInativo = produto.volumeRestante < 10;
+                    return (
+                      <div key={inicio + idx} className="col-md-4 mb-4">
+                        <div className={`card h-100 position-relative overflow-hidden ${cardInativo ? "bg-light text-muted" : ""}`}>
+                          {/* Imagem com nome sobreposto */}
+                          <div style={{ position: "relative", width: "100%", height: "140px" }}>
+                            <img
+                              src={produto.imagem}
+                              alt={produto.nome}
+                              style={{
+                                width: "100%",
+                                height: "140px",
+                                objectFit: "cover",
+                                borderRadius: "8px"
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: "0",
+                                left: "0",
+                                width: "100%",
+                                background: "rgba(0,0,0,0.5)",
+                                color: "#fff",
+                                padding: "8px 12px",
+                                fontWeight: "bold",
+                                fontSize: "1.2em",
+                                borderBottomLeftRadius: "8px",
+                                borderBottomRightRadius: "8px",
+                                display: "flex",
+                                alignItems: "center"
+                              }}
+                            >
+                              {produto.nome}
+                              {produto.urlFragrantica &&
+                                produto.urlFragrantica.trim() !== "" && (
+                                  <button
+                                    className="btn btn-link p-0 ms-2"
+                                    title="Ver no Fragrantica"
+                                    onClick={() => window.open(produto.urlFragrantica, "_blank")}
+                                    style={{ verticalAlign: "middle" }}
+                                  >
+                                    <img
+                                      src="https://www.fragrantica.com.br/favicon.ico"
+                                      alt="Fragrantica"
+                                      style={{ width: "22px", marginLeft: "8px" }}
+                                    />
+                                  </button>
+                                )
+                              }
+                            </div>
+                          </div>
+                          <div className="card-body d-flex flex-column">
+                            <label className="form-label">
+                              Volume:&nbsp;
+                              <select
+                                className="form-select mb-3"
+                                value={volumesSelecionados[inicio + idx] || "2ml"}
+                                onChange={e => handleVolumeChange(inicio + idx, e.target.value)}
+                                disabled={cardInativo}
+                              >
+                                {Object.keys(produto.precos).map(volume => {
+                                  const mlVenda = parseInt(volume.replace("ml", ""));
+                                  const disponivel = produto.volumeRestante >= mlVenda && !cardInativo;
+                                  return (
+                                    <option key={volume} value={volume} disabled={!disponivel}>
+                                      {volume} - R$ {produto.precos[volume]} {disponivel ? "" : "(Sem estoque)"}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </label>
+                            <button
+                              className="btn btn-success mt-auto"
+                              onClick={() => adicionarAoCarrinho(produto, inicio + idx)}
+                              disabled={cardInativo || produto.volumeRestante < parseInt((volumesSelecionados[inicio + idx] || "2ml").replace("ml", ""))}
+                            >
+                              Adicionar ao Carrinho
+                            </button>
+                            {cardInativo && (
+                              <div className="mt-2 text-danger fw-bold">Produto indisponível</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </main>
+
+                {/* Paginação */}
+                <nav className="d-flex justify-content-center align-items-center mt-4">
+                  <ul className="pagination mb-0">
+                    <li className={`page-item ${pagina === 1 ? "disabled" : ""}`}>
+                      <button className="page-link" onClick={() => setPagina(pagina - 1)} disabled={pagina === 1}>
+                        &laquo;
+                      </button>
+                    </li>
+                    {Array.from({ length: totalPaginas }, (_, i) => (
+                      <li key={i + 1} className={`page-item ${pagina === i + 1 ? "active" : ""}`}>
+                        <button className="page-link" onClick={() => setPagina(i + 1)}>
+                          {i + 1}
                         </button>
-                      )
-                    }
-                  </div>
-                </div>
-                <div className="card-body d-flex flex-column">
-                  <label className="form-label">
-                    Volume:&nbsp;
-                    <select
-                      className="form-select mb-3"
-                      value={volumesSelecionados[inicio + idx] || "2ml"}
-                      onChange={e => handleVolumeChange(inicio + idx, e.target.value)}
-                      disabled={cardInativo}
-                    >
-                      {Object.keys(produto.precos).map(volume => {
-                        const mlVenda = parseInt(volume.replace("ml", ""));
-                        const disponivel = produto.volumeRestante >= mlVenda && !cardInativo;
-                        return (
-                          <option key={volume} value={volume} disabled={!disponivel}>
-                            {volume} - R$ {produto.precos[volume]} {disponivel ? "" : "(Sem estoque)"}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                  <button
-                    className="btn btn-success mt-auto"
-                    onClick={() => adicionarAoCarrinho(produto, inicio + idx)}
-                    disabled={cardInativo || produto.volumeRestante < parseInt((volumesSelecionados[inicio + idx] || "2ml").replace("ml", ""))}
-                  >
-                    Adicionar ao Carrinho
-                  </button>
-                  {cardInativo && (
-                    <div className="mt-2 text-danger fw-bold">Produto indisponível</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </main>
+                      </li>
+                    ))}
+                    <li className={`page-item ${pagina === totalPaginas ? "disabled" : ""}`}>
+                      <button className="page-link" onClick={() => setPagina(pagina + 1)} disabled={pagina === totalPaginas}>
+                        &raquo;
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              </>
+            }
+          />
+          <Route
+            path="/login-admin-daniel-faria"
+            element={
+              <LoginAdmin
+                onLogin={() => setAdminLogado(true)}
+                adminLogado={adminLogado}
+              />
+            }
+          />
 
-      {/* Paginação */}
-      <nav className="d-flex justify-content-center align-items-center mt-4">
-        <ul className="pagination mb-0">
-          <li className={`page-item ${pagina === 1 ? "disabled" : ""}`}>
-            <button className="page-link" onClick={() => setPagina(pagina - 1)} disabled={pagina === 1}>
-              &laquo;
-            </button>
-          </li>
-          {Array.from({ length: totalPaginas }, (_, i) => (
-            <li key={i + 1} className={`page-item ${pagina === i + 1 ? "active" : ""}`}>
-              <button className="page-link" onClick={() => setPagina(i + 1)}>
-                {i + 1}
-              </button>
-            </li>
-          ))}
-          <li className={`page-item ${pagina === totalPaginas ? "disabled" : ""}`}>
-            <button className="page-link" onClick={() => setPagina(pagina + 1)} disabled={pagina === totalPaginas}>
-              &raquo;
-            </button>
-          </li>
-        </ul>
-      </nav>
 
-      <Carrinho
-        aberto={carrinhoAberto}
-        itens={carrinho}
-        onFechar={() => setCarrinhoAberto(false)}
-        onRemover={removerDoCarrinho}
-      />
-    </div>
+        </Routes>
+        <Carrinho
+          aberto={carrinhoAberto}
+          itens={carrinho}
+          onFechar={() => setCarrinhoAberto(false)}
+          onRemover={removerDoCarrinho}
+        />
+      </div>
+    </BrowserRouter>
   );
 }
