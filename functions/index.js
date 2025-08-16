@@ -1,4 +1,4 @@
-const functions = require("firebase-functions");
+const functions = require("firebase-functions/v2");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
@@ -7,31 +7,27 @@ const admin = require("firebase-admin");
 // Inicializa o Firebase Admin
 admin.initializeApp();
 
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
 const db = admin.firestore();
 
 const app = express();
+
 app.use(cors({origin: true}));
 app.use(express.json());
-
-// Hash da senha do admin
-const ADMIN_HASH =
-  "$2a$12$zkC53TaMvmJHtCuwPAUXLuYyEKkJcK7KGepUI9ycMtimkUnDMZQeS";
 
 // Rota de teste
 app.get("/", (req, res) => {
   res.send("API Uai Decants rodando com Firebase!");
 });
 
-// Rota de login admin
 app.post("/login-admin-daniel-faria", async (req, res) => {
   const {senha} = req.body;
+  const ADMIN_HASH = process.env.ADMIN_HASH;
+  if (!ADMIN_HASH) {
+    return res.status(500).json({
+      success: false,
+      message: "Hash do admin não configurado no ambiente.",
+    });
+  }
   const match = await bcrypt.compare(senha, ADMIN_HASH);
   if (match) {
     res.json({success: true});
@@ -46,7 +42,7 @@ app.post("/login-admin-daniel-faria", async (req, res) => {
 // Cadastrar perfume
 app.post("/api/perfumes", async (req, res) => {
   try {
-    console.log("Dados recebidos:", req.body); // Log dos dados recebidos
+    console.log("Dados recebidos:", req.body);
     const perfume = {...req.body, ativo: true};
     const docRef = await db.collection("perfumes").add(perfume);
     res.json({
@@ -54,7 +50,7 @@ app.post("/api/perfumes", async (req, res) => {
       ...perfume,
     });
   } catch (err) {
-    console.error("Erro ao cadastrar perfume:", err); // Log do erro detalhado
+    console.error("Erro ao cadastrar perfume:", err);
     res.status(500).json({error: err.message});
   }
 });
@@ -133,5 +129,6 @@ app.post("/api/perfumes/:id/ativar", async (req, res) => {
   }
 });
 
-// Exporta o app Express como função do Firebase
-exports.api = functions.https.onRequest(app);
+exports.api = functions.https.onRequest(app, {
+  secrets: ["ADMIN_HASH"],
+});
