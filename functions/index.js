@@ -129,6 +129,6 @@ app.post("/api/perfumes/:id/ativar", async (req, res) => {
   }
 });
 
-exports.api = functions.https.onRequest(app, {
+exports.api = functions.https.onRequest({
   secrets: ["ADMIN_HASH"],
-});
+}, app);
