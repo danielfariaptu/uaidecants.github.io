@@ -13,7 +13,8 @@ export default function PerfumeAdmin() {
     precos8ml: "",
     precos15ml: "",
     urlFragrantica: "",
-    imagem: ""
+    imagem: "",
+    pedidos: 0 
   });
   const [editando, setEditando] = useState(null);
 
@@ -27,7 +28,7 @@ export default function PerfumeAdmin() {
     fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(novo) // <-- use 'novo' aqui!
+      body: JSON.stringify({ ...novo, pedidos: 0 }) 
     })
       .then(res => res.json())
       .then(data => {
@@ -40,7 +41,8 @@ export default function PerfumeAdmin() {
           precos8ml: "",
           precos15ml: "",
           urlFragrantica: "",
-          imagem: ""
+          imagem: "",
+          pedidos: 0
         });
       })
       .catch(err => {

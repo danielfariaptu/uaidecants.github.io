@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
 
-// Função para transformar os dados do Sheets
-function transformarProdutos(dadosSheets) {
-  return dadosSheets.map(item => ({
+// Função para transformar os dados da API
+function transformarProdutos(dadosAPI) {
+  return dadosAPI.map(item => ({
     nome: item.nome,
     volumeInicial: Number(item.volumeInicial),
     volumeRestante: Number(item.volumeInicial),
@@ -15,13 +15,13 @@ function transformarProdutos(dadosSheets) {
       "15ml": Number(item.precos15ml)
     },
     urlFragrantica: item.urlFragrantica,
-    imagem: item.imagem
+    imagem: item.imagem,
+    pedidos: Number(item.pedidos) || 0
   }));
 }
 
 function Carrinho({ aberto, itens, onFechar, onRemover }) {
   const total = itens.reduce((acc, item) => acc + item.preco * item.quantidade, 0);
-
   return (
     <div
       className={`offcanvas offcanvas-end${aberto ? " show" : ""}`}
@@ -123,8 +123,6 @@ function LoginAdmin({ onLogin, adminLogado }) {
 }
 
 export default function App() {
-  // Carregar estados do localStorage
-
   const [ordem, setOrdem] = useState(() => localStorage.getItem("ordem") || "alfabetica");
   const [pagina, setPagina] = useState(() => Number(localStorage.getItem("pagina")) || 1);
   const [produtos, setProdutos] = useState([]);
@@ -137,9 +135,8 @@ export default function App() {
     const salvo = localStorage.getItem("volumesSelecionados");
     return salvo ? JSON.parse(salvo) : {};
   });
+  const [busca, setBusca] = useState(""); // estado para busca
   const itensPorPagina = 6;
-
-  // Estado para login admin
   const [adminLogado, setAdminLogado] = useState(() => {
     return localStorage.getItem("adminLogado") === "true";
   });
@@ -147,26 +144,21 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("adminLogado", adminLogado ? "true" : "false");
   }, [adminLogado]);
-
-  // Persistir estados no localStorage
   useEffect(() => {
     localStorage.setItem("carrinho", JSON.stringify(carrinho));
   }, [carrinho]);
-
   useEffect(() => {
     localStorage.setItem("volumesSelecionados", JSON.stringify(volumesSelecionados));
   }, [volumesSelecionados]);
-
   useEffect(() => {
     localStorage.setItem("ordem", ordem);
   }, [ordem]);
-
   useEffect(() => {
     localStorage.setItem("pagina", pagina);
   }, [pagina]);
 
   useEffect(() => {
-    fetch("https://opensheet.elk.sh/1FAGEx9NpcQXtukNKsnxd_RySr5Jc3rTk827QLKjSA7Q/Sheet1")
+    fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes")
       .then(res => res.json())
       .then(data => setProdutos(transformarProdutos(data)));
   }, []);
@@ -187,15 +179,21 @@ export default function App() {
         const minB = Math.min(...Object.values(b.precos));
         return minA - minB;
       });
+    } else if (ordem === "maisVendidos") {
+      novaLista.sort((a, b) => (b.pedidos || 0) - (a.pedidos || 0));
     }
     return novaLista;
   }
 
+  // Filtra produtos conforme busca
   const produtosOrdenados = ordenarProdutos(produtos);
-  const totalPaginas = Math.ceil(produtosOrdenados.length / itensPorPagina);
+  const produtosFiltrados = produtosOrdenados.filter(produto =>
+    produto.nome.toLowerCase().includes(busca.toLowerCase())
+  );
+  const totalPaginas = Math.ceil(produtosFiltrados.length / itensPorPagina);
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina;
-  const produtosPaginados = produtosOrdenados.slice(inicio, fim);
+  const produtosPaginados = produtosFiltrados.slice(inicio, fim);
 
   function handleVolumeChange(idx, volume) {
     setVolumesSelecionados({ ...volumesSelecionados, [idx]: volume });
@@ -236,7 +234,7 @@ export default function App() {
       setProdutos(novosProdutos);
     }
 
-    setCarrinhoAberto(true); // Abre o carrinho ao adicionar
+    setCarrinhoAberto(true);
   }
 
   function removerDoCarrinho(idx) {
@@ -260,10 +258,19 @@ export default function App() {
       <div className="container py-4">
         <nav className="navbar mb-4">
           <a href="/">
-            <img src="/images/Logo.png" alt="Uai Decants" className="navbar-logo"/>
+            <img src="/images/Logo.png" alt="Uai Decants" className="navbar-logo" />
           </a>
           <div className="navbar-search">
-            <input type="text" placeholder="Qual perfume procura?" className="navbar-input" />
+            <input
+              type="text"
+              placeholder="Qual perfume procura?"
+              className="navbar-input"
+              value={busca}
+              onChange={e => {
+                setBusca(e.target.value);
+                setPagina(1);
+              }}
+            />
           </div>
           <a href="https://wa.me/5538997248602" target="_blank" rel="noopener noreferrer" className="navbar-whatsapp">
             <span style={{ fontSize: "1.3em", marginRight: "6px" }}>🟢</span>
@@ -279,14 +286,12 @@ export default function App() {
         </nav>
 
         <Routes>
-
           <Route
             path="/"
             element={
               <>
-                {/* Controle de ordenação */}
                 <div className="d-flex justify-content-end align-items-center mb-3 gap-2">
-                  <label className="form-label mb-0">Ordenar por:</label>
+                  <label className="form-label mb-0 text-white">Ordenar por:</label>
                   <select
                     className="form-select w-auto"
                     value={ordem}
@@ -298,17 +303,15 @@ export default function App() {
                     <option value="alfabetica">Alfabética</option>
                     <option value="maisCaros">Mais caros</option>
                     <option value="maisBaratos">Mais baratos</option>
+                    <option value="maisVendidos">Mais vendidos</option>
                   </select>
                 </div>
-
-                {/* Renderização dos cards paginados */}
                 <main className="row">
                   {produtosPaginados.map((produto, idx) => {
                     const cardInativo = produto.volumeRestante < 10;
                     return (
                       <div key={inicio + idx} className="col-md-4 mb-4">
                         <div className={`card h-100 position-relative overflow-hidden ${cardInativo ? "bg-light text-muted" : ""}`}>
-                          {/* Imagem com nome sobreposto */}
                           <div style={{ position: "relative", width: "100%", height: "140px" }}>
                             <img
                               src={produto.imagem}
@@ -392,8 +395,6 @@ export default function App() {
                     );
                   })}
                 </main>
-
-                {/* Paginação */}
                 <nav className="d-flex justify-content-center align-items-center mt-4">
                   <ul className="pagination mb-0">
                     <li className={`page-item ${pagina === 1 ? "disabled" : ""}`}>
@@ -430,8 +431,6 @@ export default function App() {
               />
             }
           />
-
-
         </Routes>
         <Carrinho
           aberto={carrinhoAberto}

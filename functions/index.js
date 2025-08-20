@@ -4,6 +4,7 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const admin = require("firebase-admin");
 
+
 // Inicializa o Firebase Admin
 admin.initializeApp();
 
