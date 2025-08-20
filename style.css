@@ -1,6 +1,6 @@
 body {
   font-family: Arial, sans-serif;
-  background-color: #ffcd1e;
+  background-color: #0c2035;
   margin: 0;
   padding: 0;
 }
@@ -10,9 +10,170 @@ h1 {
   text-align: center;
   margin-top: 20px;
 }
+
 header {
   text-align: center;
   padding: 20px;
+}
+
+.navbar-logo {
+  width: 180px !important;
+  height: auto;
+  margin-right: 20px;
+  display: block;
+  transition: transform 0.2s;
+}
+
+.navbar-logo:hover {
+  transform: scale(1.08);
+  cursor: pointer;
+}
+
+/*INICIO NAV BAR*/
+.navbar {
+  background: #ffcd1e;
+  border-radius: 12px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px rgba(255, 205, 30, 0.15);
+  margin-bottom: 24px;
+}
+
+.navbar img {
+  width: 56px;
+  margin-right: 8px;
+}
+
+.navbar-search {
+  flex: 1;
+  min-width: 160px;
+  max-width: 300px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.navbar-input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: #fff;
+  color: #222;
+  font-size: 1em;
+  box-shadow: 0 0 4px #ffe066;
+}
+
+.navbar-whatsapp {
+  display: flex;
+  align-items: center;
+  color: #25D366;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 14px;
+  margin: 0;
+  text-decoration: none;
+  font-weight: bold;
+  box-shadow: 0 0 4px #ffe066;
+}
+
+.navbar-cart {
+  background: #00213c;
+  color: #fff;
+  border: 1px solid #ffe066;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 1em;
+  font-weight: bold;
+  box-shadow: 0 0 4px #ffe066;
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin: 0;
+}
+
+.navbar-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ffe066;
+  color: #222;
+  font-weight: bold;
+  border-radius: 50%;
+  padding: 2px 8px;
+  font-size: 0.95em;
+  box-shadow: 0 2px 8px rgba(255, 205, 30, 0.25);
+  border: 2px solid #fff;
+  z-index: 2;
+  transition: background 0.2s, color 0.2s;
+}
+
+.navbar-account {
+  background: #fff;
+  color: #222;
+  border: 1px solid #ffe066;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 1em;
+  font-weight: bold;
+  box-shadow: 0 0 4px #00213c;
+  margin: 0;
+}
+
+/* Responsividade para celular */
+@media (max-width: 800px) {
+  .navbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 4px;
+  }
+
+  .navbar-search,
+  .navbar-input,
+  .navbar-whatsapp,
+  .navbar-cart,
+  .navbar-account {
+    width: 100%;
+    margin-bottom: 6px;
+    max-width: none;
+    font-size: 1em;
+    padding: 8px 10px;
+  }
+}
+
+/*FIM NAV BAR*/
+
+.btn-carrinho {
+  background: linear-gradient(90deg, #FFD700 0%, #FFFACD 100%);
+  color: #333;
+  border: 1px solid #FFD700;
+  box-shadow: 0 0 8px #FFD700;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-weight: bold;
+  font-size: 1.1em;
+  cursor: pointer;
+  position: relative;
+  transition: box-shadow 0.3s;
+}
+
+.btn-carrinho:hover {
+  box-shadow: 0 0 16px #FFD700, 0 0 32px #FFFACD;
+}
+
+.badge {
+  background: #FFFACD;
+  color: #FFD700;
+  border-radius: 50%;
+  padding: 4px 10px;
+  font-size: 1em;
+  margin-left: 8px;
+  box-shadow: 0 0 8px #FFD700;
 }
 
 .logo {
@@ -26,7 +187,8 @@ table {
   background: #e2d7b9;
 }
 
-th, td {
+th,
+td {
   padding: 10px;
   text-align: center;
   border: 1px solid #0026ff;
@@ -63,7 +225,7 @@ button:hover {
   top: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .modal-content {
@@ -73,6 +235,13 @@ button:hover {
   width: 80%;
   max-width: 500px;
   border-radius: 8px;
+}
+
+.offcanvas,
+#carrinho {
+  width: 420px !important;
+  /* ajuste para o tamanho desejado */
+  max-width: 90vw;
 }
 
 .close {
@@ -87,4 +256,39 @@ button:hover {
   padding: 10px 15px;
   text-decoration: none;
   border-radius: 5px;
+}
+
+@media (min-width: 1200px) {
+  html {
+    font-size: 20px;
+    /* 125% of the default 16px */
+  }
+
+  .container {
+    max-width: 1400px;
+    padding: 32px 24px;
+  }
+
+  .navbar {
+    padding: 18px 32px;
+    gap: 24px;
+  }
+
+  .navbar-logo {
+    width: 100px;
+  }
+
+  .navbar-input,
+  .navbar-whatsapp,
+  .navbar-cart,
+  .navbar-account,
+  .form-control,
+  .form-select,
+  .btn {
+    font-size: 1.15em;
+    padding: 14px 22px;
+  }
+
+
+
 }

@@ -258,20 +258,25 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="container py-4">
-        < header className="d-flex align-items-center mb-4">
-          <a href="/.."> <img src="/images/Logo.png" alt="Uai Decants" style={{ width: "80px", marginRight: "16px" }} /></a>
-          <h1 className="flex-grow-1">Monte seu pedido</h1>
-          {/* Removido o botão/link Admin */}
-          <button
-            className="btn btn-primary position-relative"
-            onClick={() => setCarrinhoAberto(true)}
-          >
-            <span style={{ fontSize: "22px" }}>🛍️</span> Carrinho
-            <span className="badge bg-warning text-dark position-absolute top-0 start-100 translate-middle rounded-pill">
-              {totalItens}
-            </span>
+        <nav className="navbar mb-4">
+          <a href="/">
+            <img src="/images/Logo.png" alt="Uai Decants" className="navbar-logo"/>
+          </a>
+          <div className="navbar-search">
+            <input type="text" placeholder="Qual perfume procura?" className="navbar-input" />
+          </div>
+          <a href="https://wa.me/5538997248602" target="_blank" rel="noopener noreferrer" className="navbar-whatsapp">
+            <span style={{ fontSize: "1.3em", marginRight: "6px" }}>🟢</span>
+            Atendimento
+          </a>
+          <button className="btn btn-primary position-relative navbar-cart" onClick={() => setCarrinhoAberto(true)}>
+            <span style={{ fontSize: "22px" }}>🛒</span> Carrinho
+            <span className="badge navbar-badge">{totalItens}</span>
           </button>
-        </header>
+          <button className="btn navbar-account">
+            Minha Conta
+          </button>
+        </nav>
 
         <Routes>
 
