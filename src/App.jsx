@@ -122,6 +122,70 @@ function LoginAdmin({ onLogin, adminLogado }) {
   );
 }
 
+// Dropdown de Minha Conta
+function MenuConta({ logado, onLogin, onLogout }) {
+  const [aberto, setAberto] = useState(false);
+
+  return (
+    <div className="dropdown" style={{ display: "inline-block" }}>
+      <button
+        className="btn navbar-account dropdown-toggle"
+        onClick={() => setAberto(!aberto)}
+        aria-expanded={aberto}
+      >
+        Minha Conta
+      </button>
+      <ul
+        className={`dropdown-menu${aberto ? " show" : ""}`}
+        style={{ minWidth: 180 }}
+      >
+        {!logado ? (
+          <>
+            <li>
+              <button className="dropdown-item" onClick={() => onLogin("criar")}>
+                Criar conta
+              </button>
+            </li>
+            <li>
+              <button className="dropdown-item" onClick={() => onLogin("login")}>
+                Iniciar Sessão
+              </button>
+            </li>
+            <li>
+              <button className="dropdown-item" onClick={() => onLogin("convidado")}>
+                Comprar como Convidado
+              </button>
+            </li>
+          </>
+        ) : (
+          <>
+            <li>
+              <button className="dropdown-item" onClick={() => onLogin("dados")}>
+                Dados
+              </button>
+            </li>
+            <li>
+              <button className="dropdown-item" onClick={() => onLogin("enderecos")}>
+                Endereços
+              </button>
+            </li>
+            <li>
+              <button className="dropdown-item" onClick={() => onLogin("pedidos")}>
+                Meus Pedidos
+              </button>
+            </li>
+            <li>
+              <button className="dropdown-item text-danger" onClick={onLogout}>
+                Sair
+              </button>
+            </li>
+          </>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 export default function App() {
   const [ordem, setOrdem] = useState(() => localStorage.getItem("ordem") || "alfabetica");
   const [pagina, setPagina] = useState(() => Number(localStorage.getItem("pagina")) || 1);
@@ -135,11 +199,15 @@ export default function App() {
     const salvo = localStorage.getItem("volumesSelecionados");
     return salvo ? JSON.parse(salvo) : {};
   });
-  const [busca, setBusca] = useState(""); // estado para busca
+  const [busca, setBusca] = useState("");
   const itensPorPagina = 6;
   const [adminLogado, setAdminLogado] = useState(() => {
     return localStorage.getItem("adminLogado") === "true";
   });
+
+  // Estados para menu de conta
+  const [contaMenu, setContaMenu] = useState(""); // controla qual tela do menu conta
+  const [usuarioLogado, setUsuarioLogado] = useState(false); // controle login
 
   useEffect(() => {
     localStorage.setItem("adminLogado", adminLogado ? "true" : "false");
@@ -280,10 +348,23 @@ export default function App() {
             <span style={{ fontSize: "22px" }}>🛒</span> Carrinho
             <span className="badge navbar-badge">{totalItens}</span>
           </button>
-          <button className="btn navbar-account">
-            Minha Conta
-          </button>
+          <MenuConta
+            logado={usuarioLogado}
+            onLogin={tipo => setContaMenu(tipo)}
+            onLogout={() => {
+              setUsuarioLogado(false);
+              setContaMenu("");
+            }}
+          />
         </nav>
+
+        {/* Renderização das telas do menu conta */}
+        {contaMenu === "criar" && <div className="container"><h4>Criar Conta</h4>{/* Formulário de cadastro aqui */}</div>}
+        {contaMenu === "login" && <div className="container"><h4>Iniciar Sessão</h4>{/* Formulário de login aqui */}</div>}
+        {contaMenu === "convidado" && <div className="container"><h4>Checkout como Convidado</h4>{/* Checkout simples aqui */}</div>}
+        {contaMenu === "dados" && <div className="container"><h4>Meus Dados</h4>{/* Dados do usuário aqui */}</div>}
+        {contaMenu === "enderecos" && <div className="container"><h4>Endereços</h4>{/* Endereços do usuário aqui */}</div>}
+        {contaMenu === "pedidos" && <div className="container"><h4>Meus Pedidos</h4>{/* Pedidos do usuário aqui */}</div>}
 
         <Routes>
           <Route
