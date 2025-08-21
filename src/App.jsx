@@ -2,6 +2,52 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
 
+// Toast visual feedback
+function Toast({ mensagem, tipo = "info", onClose }) {
+  if (!mensagem) return null;
+  const cores = {
+    info: "#3498db",
+    success: "#27ae60",
+    error: "#e74c3c",
+    warning: "#f39c12"
+  };
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 24,
+        right: 0,
+        zIndex: 9999,
+        background: cores[tipo] || "#3498db",
+        color: "#fff",
+        padding: "14px 50px",
+        borderRadius: "8px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        minWidth: "220px",
+        fontWeight: "bold"
+      }}
+      onClick={onClose}
+    >
+      {mensagem}
+      <button
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "#fff",
+          fontSize: "1.2em",
+          float: "center",
+          marginLeft: "12px",
+          cursor: "pointer"
+        }}
+        title="Fechar"
+        onClick={onClose}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 // Função para transformar os dados da API
 function transformarProdutos(dadosAPI) {
   return dadosAPI.map(item => ({
@@ -65,7 +111,7 @@ function Carrinho({ aberto, itens, onFechar, onRemover }) {
   );
 }
 
-function LoginAdmin({ onLogin, adminLogado }) {
+function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
   const [senhaAdmin, setSenhaAdmin] = useState("");
   const [erroLogin, setErroLogin] = useState("");
 
@@ -83,11 +129,14 @@ function LoginAdmin({ onLogin, adminLogado }) {
         onLogin(true);
         setSenhaAdmin("");
         setErroLogin("");
+        mostrarToast("Login realizado com sucesso!", "success");
       } else {
         setErroLogin(data.message || "Senha incorreta!");
+        mostrarToast("Senha incorreta!", "error");
       }
     } catch (err) {
       setErroLogin("Erro ao conectar ao servidor.");
+      mostrarToast("Erro ao conectar ao servidor.", "error");
     }
   }
 
@@ -97,7 +146,10 @@ function LoginAdmin({ onLogin, adminLogado }) {
         <h3>Painel Admin</h3>
         <button
           className="btn btn-outline-danger mb-3"
-          onClick={() => onLogin(false)}
+          onClick={() => {
+            onLogin(false);
+            mostrarToast("Logout realizado.", "info");
+          }}
         >
           Sair
         </button>
@@ -209,6 +261,15 @@ export default function App() {
   const [contaMenu, setContaMenu] = useState(""); // controla qual tela do menu conta
   const [usuarioLogado, setUsuarioLogado] = useState(false); // controle login
 
+  // Toast state
+  const [toast, setToast] = useState({ mensagem: "", tipo: "info" });
+
+  // Função para mostrar toast
+  function mostrarToast(mensagem, tipo = "info") {
+    setToast({ mensagem, tipo });
+    setTimeout(() => setToast({ mensagem: "", tipo }), 3500);
+  }
+
   useEffect(() => {
     localStorage.setItem("adminLogado", adminLogado ? "true" : "false");
   }, [adminLogado]);
@@ -230,7 +291,7 @@ export default function App() {
       .then(res => res.json())
       .then(data => setProdutos(transformarProdutos(data)));
   }, []);
-
+  Toast
   function ordenarProdutos(lista) {
     let novaLista = [...lista];
     if (ordem === "alfabetica") {
@@ -271,9 +332,26 @@ export default function App() {
     const volume = volumesSelecionados[idx] || "2ml";
     const preco = produto.precos[volume];
     const mlVenda = parseInt(volume.replace("ml", ""));
-    const estoqueAtual = produto.volumeRestante;
+    const nomeProduto = produto.nome;
 
-    if (estoqueAtual < mlVenda) return;
+    // Soma total de ml desse perfume já no carrinho
+    const totalMlNoCarrinho = carrinho
+      .filter(item => item.nome === nomeProduto)
+      .reduce((acc, item) => acc + parseInt(item.volume.replace("ml", "")) * item.quantidade, 0);
+
+    // Estoque real disponível para retirada
+    const estoqueDisponivel = produto.volumeInicial - totalMlNoCarrinho;
+
+    // Nunca permitir retirar mais do que o volumeInicial - 10ml
+    if (totalMlNoCarrinho + mlVenda > produto.volumeInicial - 10) {
+      mostrarToast("Sem estoque", "error");
+      return;
+    }
+
+    if (estoqueDisponivel < mlVenda) {
+      mostrarToast("Sem estoque", "error");
+      return;
+    }
 
     const itemIdx = carrinho.findIndex(
       item => item.nome === produto.nome && item.volume === volume
@@ -282,8 +360,9 @@ export default function App() {
       const novoCarrinho = [...carrinho];
       novoCarrinho[itemIdx].quantidade += 1;
       setCarrinho(novoCarrinho);
+      localStorage.setItem("carrinho", JSON.stringify(novoCarrinho));
     } else {
-      setCarrinho([
+      const novoCarrinho = [
         ...carrinho,
         {
           nome: produto.nome,
@@ -291,32 +370,21 @@ export default function App() {
           preco,
           quantidade: 1
         }
-      ]);
+      ];
+      setCarrinho(novoCarrinho);
+      localStorage.setItem("carrinho", JSON.stringify(novoCarrinho));
     }
 
-    const novosProdutos = [...produtos];
-    const nomeProduto = produto.nome;
-    const idxReal = novosProdutos.findIndex(p => p.nome === nomeProduto);
-    if (idxReal >= 0) {
-      novosProdutos[idxReal].volumeRestante -= mlVenda;
-      setProdutos(novosProdutos);
-    }
-
+    mostrarToast("Produto adicionado ao carrinho!", "success");
     setCarrinhoAberto(true);
   }
 
   function removerDoCarrinho(idx) {
-    const item = carrinho[idx];
-    const mlVenda = parseInt(item.volume.replace("ml", ""));
-    const prodIdx = produtos.findIndex(p => p.nome === item.nome);
-    if (prodIdx >= 0) {
-      const novosProdutos = [...produtos];
-      novosProdutos[prodIdx].volumeRestante += mlVenda * item.quantidade;
-      setProdutos(novosProdutos);
-    }
     const novoCarrinho = [...carrinho];
     novoCarrinho.splice(idx, 1);
     setCarrinho(novoCarrinho);
+    localStorage.setItem("carrinho", JSON.stringify(novoCarrinho));
+    mostrarToast("Item removido do carrinho.", "info");
   }
 
   const totalItens = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
@@ -324,6 +392,12 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="container py-4">
+        {/* Toast visual */}
+        <Toast
+          mensagem={toast.mensagem}
+          tipo={toast.tipo}
+          onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
+        />
         <nav className="navbar mb-4">
           <a href="/">
             <img src="/images/Logo.png" alt="Uai Decants" className="navbar-logo" />
@@ -354,6 +428,7 @@ export default function App() {
             onLogout={() => {
               setUsuarioLogado(false);
               setContaMenu("");
+              mostrarToast("Logout realizado.", "info");
             }}
           />
         </nav>
@@ -389,10 +464,27 @@ export default function App() {
                 </div>
                 <main className="row">
                   {produtosPaginados.map((produto, idx) => {
-                    const cardInativo = produto.volumeRestante < 10;
+                    const nomeProduto = produto.nome;
+                    // Soma total de ml desse perfume já no carrinho
+                    const totalMlNoCarrinho = carrinho
+                      .filter(item => item.nome === nomeProduto)
+                      .reduce((acc, item) => acc + parseInt(item.volume.replace("ml", "")) * item.quantidade, 0);
+
+                    // Estoque disponível para retirada
+                    const estoqueDisponivel = produto.volumeInicial - totalMlNoCarrinho;
+
+                    // Verifica se existe algum volume permitido
+                    const algumPermitido = Object.keys(produto.precos).some(volume => {
+                      const mlVenda = parseInt(volume.replace("ml", ""));
+                      return estoqueDisponivel - mlVenda >= 10;
+                    });
+
+                    // Card bloqueado se nenhum volume pode ser retirado
+                    const bloqueado = !algumPermitido;
+
                     return (
                       <div key={inicio + idx} className="col-md-4 mb-4">
-                        <div className={`card h-100 position-relative overflow-hidden ${cardInativo ? "bg-light text-muted" : ""}`}>
+                        <div className={`card h-100 position-relative overflow-hidden ${bloqueado ? "bg-light text-muted" : ""}`}>
                           <div style={{ position: "relative", width: "100%", height: "140px" }}>
                             <img
                               src={produto.imagem}
@@ -447,28 +539,46 @@ export default function App() {
                                 className="form-select mb-3"
                                 value={volumesSelecionados[inicio + idx] || "2ml"}
                                 onChange={e => handleVolumeChange(inicio + idx, e.target.value)}
-                                disabled={cardInativo}
+                                disabled={bloqueado}
                               >
                                 {Object.keys(produto.precos).map(volume => {
                                   const mlVenda = parseInt(volume.replace("ml", ""));
-                                  const disponivel = produto.volumeRestante >= mlVenda && !cardInativo;
+                                  const permitido = estoqueDisponivel - mlVenda >= 10;
                                   return (
-                                    <option key={volume} value={volume} disabled={!disponivel}>
-                                      {volume} - R$ {produto.precos[volume]} {disponivel ? "" : "(Sem estoque)"}
+                                    <option key={volume} value={volume} disabled={!permitido}>
+                                      {volume} - R$ {produto.precos[volume]} {!permitido ? "(sem estoque)" : ""}
                                     </option>
                                   );
                                 })}
                               </select>
                             </label>
-                            <button
-                              className="btn btn-success mt-auto"
-                              onClick={() => adicionarAoCarrinho(produto, inicio + idx)}
-                              disabled={cardInativo || produto.volumeRestante < parseInt((volumesSelecionados[inicio + idx] || "2ml").replace("ml", ""))}
-                            >
-                              Adicionar ao Carrinho
-                            </button>
-                            {cardInativo && (
-                              <div className="mt-2 text-danger fw-bold">Produto indisponível</div>
+                            {bloqueado ? (
+                              <button
+                                className="btn btn-danger mt-auto"
+                                disabled
+                                style={{ cursor: "not-allowed" }}
+                              >
+                                Estoque insuficiente
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-success mt-auto"
+                                onClick={() => adicionarAoCarrinho(produto, inicio + idx)}
+                                disabled={
+                                  !Object.keys(produto.precos).some(volume => {
+                                    const mlVenda = parseInt(volume.replace("ml", ""));
+                                    return (
+                                      volume === (volumesSelecionados[inicio + idx] || "2ml") &&
+                                      estoqueDisponivel - mlVenda >= 10
+                                    );
+                                  })
+                                }
+                              >
+                                Adicionar ao Carrinho
+                              </button>
+                            )}
+                            {bloqueado && (
+                              <div className="mt-2 text-danger fw-bold text-center">Produto indisponível, Todo estoque Disponível está no seu carrinho!</div>
                             )}
                           </div>
                         </div>
@@ -509,6 +619,7 @@ export default function App() {
                   localStorage.setItem("adminLogado", logado ? "true" : "false");
                 }}
                 adminLogado={adminLogado}
+                mostrarToast={mostrarToast}
               />
             }
           />
