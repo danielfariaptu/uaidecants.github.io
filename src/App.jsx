@@ -178,6 +178,16 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
 function MenuConta({ logado, onLogin, onLogout }) {
   const [aberto, setAberto] = useState(false);
 
+  function handleClick(action) {
+    setAberto(false); // Fecha o dropdown
+    onLogin(action);
+  }
+
+  function handleLogout() {
+    setAberto(false); // Fecha o dropdown
+    onLogout();
+  }
+
   return (
     <div className="dropdown" style={{ display: "inline-block" }}>
       <button
@@ -194,17 +204,17 @@ function MenuConta({ logado, onLogin, onLogout }) {
         {!logado ? (
           <>
             <li>
-              <button className="dropdown-item" onClick={() => onLogin("criar")}>
+              <button className="dropdown-item" onClick={() => handleClick("criar")}>
                 Criar conta
               </button>
             </li>
             <li>
-              <button className="dropdown-item" onClick={() => onLogin("login")}>
+              <button className="dropdown-item" onClick={() => handleClick("login")}>
                 Iniciar Sessão
               </button>
             </li>
             <li>
-              <button className="dropdown-item" onClick={() => onLogin("convidado")}>
+              <button className="dropdown-item" onClick={() => handleClick("convidado")}>
                 Comprar como Convidado
               </button>
             </li>
@@ -212,22 +222,22 @@ function MenuConta({ logado, onLogin, onLogout }) {
         ) : (
           <>
             <li>
-              <button className="dropdown-item" onClick={() => onLogin("dados")}>
+              <button className="dropdown-item" onClick={() => handleClick("dados")}>
                 Dados
               </button>
             </li>
             <li>
-              <button className="dropdown-item" onClick={() => onLogin("enderecos")}>
+              <button className="dropdown-item" onClick={() => handleClick("enderecos")}>
                 Endereços
               </button>
             </li>
             <li>
-              <button className="dropdown-item" onClick={() => onLogin("pedidos")}>
+              <button className="dropdown-item" onClick={() => handleClick("pedidos")}>
                 Meus Pedidos
               </button>
             </li>
             <li>
-              <button className="dropdown-item text-danger" onClick={onLogout}>
+              <button className="dropdown-item text-danger" onClick={handleLogout}>
                 Sair
               </button>
             </li>
@@ -263,6 +273,8 @@ export default function App() {
 
   // Toast state
   const [toast, setToast] = useState({ mensagem: "", tipo: "info" });
+
+
 
   // Função para mostrar toast
   function mostrarToast(mensagem, tipo = "info") {
@@ -414,10 +426,39 @@ export default function App() {
               }}
             />
           </div>
-          <a href="https://wa.me/5538997248602" target="_blank" rel="noopener noreferrer" className="navbar-whatsapp">
-            <span style={{ fontSize: "1.3em", marginRight: "6px" }}>🟢</span>
-            Atendimento
-          </a>
+          {/* Atendimento dropdown usando Bootstrap padrão */}
+          <div className="dropdown" style={{ display: "inline-block" }}>
+            <button
+              className="btn btn-success dropdown-toggle"
+              type="button"
+              id="atendimentoDropdown"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              🟢 Atendimento
+            </button>
+            <ul
+              className="dropdown-menu"
+              aria-labelledby="atendimentoDropdown"
+              style={{ minWidth: 230, marginTop: -18 }}
+            >
+              <li>
+                <span className="dropdown-item-text">
+                  <i className="bi bi-envelope"></i> <a href="mailto:suporte@uaidecants.com.br"> Email Suporte </a>
+                </span>
+              </li>
+              <li>
+                <a
+                  className="dropdown-item"
+                  href="https://wa.me/5538997248602"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <i className="bi bi-whatsapp"></i> (38) 99724-8602
+                </a>
+              </li>
+            </ul>
+          </div>
           <button className="btn btn-primary position-relative navbar-cart" onClick={() => setCarrinhoAberto(true)}>
             <span style={{ fontSize: "22px" }}>🛒</span> Carrinho
             <span className="badge navbar-badge">{totalItens}</span>
