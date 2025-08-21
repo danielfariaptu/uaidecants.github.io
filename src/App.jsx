@@ -475,7 +475,51 @@ export default function App() {
         </nav>
 
         {/* Renderização das telas do menu conta */}
-        {contaMenu === "criar" && <div className="container"><h4>Criar Conta</h4>{/* Formulário de cadastro aqui */}</div>}
+        {contaMenu === "criar" && (
+          <div className="container" style={{ maxWidth: 400 }}>
+            <div className="card p-4 ">
+              <h4 style={{ textAlign: "center", color: "black" }}>Criar Conta</h4>
+              <form
+                onSubmit={async e => {
+                  e.preventDefault();
+                  const nome = e.target.nome.value;
+                  const email = e.target.email.value;
+                  const senha = e.target.senha.value;
+                  try {
+                    const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/usuarios", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ nome, email, senha })
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                      mostrarToast("Conta criada com sucesso!", "success");
+                      setContaMenu("login");
+                    } else {
+                      mostrarToast(data.message || "Erro ao criar conta.", "error");
+                    }
+                  } catch {
+                    mostrarToast("Erro de conexão.", "error");
+                  }
+                }}
+              >
+                <div className="mb-2">
+                  <label className="form-label">Nome</label>
+                  <input type="text" name="nome" className="form-control" required />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label">Email</label>
+                  <input type="email" name="email" className="form-control" required />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label">Senha</label>
+                  <input type="password" name="senha" className="form-control" required minLength={6} />
+                </div>
+                <button type="submit" className="btn btn-success w-100">Criar Conta</button>
+              </form>
+            </div>
+          </div>
+        )}
         {contaMenu === "login" && <div className="container"><h4>Iniciar Sessão</h4>{/* Formulário de login aqui */}</div>}
         {contaMenu === "convidado" && <div className="container"><h4>Checkout como Convidado</h4>{/* Checkout simples aqui */}</div>}
         {contaMenu === "dados" && <div className="container"><h4>Meus Dados</h4>{/* Dados do usuário aqui */}</div>}
