@@ -20,8 +20,33 @@ app.get("/", (req, res) => {
   res.send("API Uai Decants rodando com Firebase!");
 });
 
-app.post("/api/usuarios", async (req, res) => {
-  console.log("Recebido cadastro:", req.body);
+const EMAILS_TEMPORARIOS = [
+  "tempmail.com",
+  "10minutemail.com",
+  "mailinator.com",
+  "guerrillamail.com",
+  "yopmail.com",
+  "getnada.com",
+  "trashmail.com",
+  "fakeinbox.com",
+  "mintemail.com",
+  "dispostable.com",
+];
+
+/**
+ * Verifica se o e-mail é de domínio temporário.
+ * @param {string} email
+ * @return {boolean}
+ */
+function isEmailTemporario(email) {
+  const partes = email.split("@");
+  const dominio = partes.length > 1 ? partes[1].toLowerCase() : "";
+  return EMAILS_TEMPORARIOS.some(
+      (temp) => dominio === temp || dominio.endsWith("." + temp),
+  );
+}
+
+app.post("/api/usuarios", async (req, res) =>{
   try {
     const {nome, email, senha} = req.body;
     if (!nome || !email || !senha) {
@@ -39,6 +64,13 @@ app.post("/api/usuarios", async (req, res) => {
       return res.status(409).json({
         success: false,
         message: "Email já cadastrado.",
+      });
+    }
+
+    if (isEmailTemporario(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Não é permitido usar e-mails temporários.",
       });
     }
 

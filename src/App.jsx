@@ -1,49 +1,31 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
+import "bootstrap/dist/css/bootstrap.min.css";
 
-// Toast visual feedback
-function Toast({ mensagem, tipo = "info", onClose }) {
-  if (!mensagem) return null;
-  const cores = {
-    info: "#3498db",
-    success: "#27ae60",
-    error: "#e74c3c",
-    warning: "#f39c12"
-  };
+// Toast visual feedback (Bootstrap, sem CSS extra)
+function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
+  if (!show || !mensagem) return null;
+  // Bootstrap aceita: "primary", "secondary", "success", "danger", "warning", "info", "light", "dark"
+  const tipoBootstrap = tipo === "error" ? "danger" : tipo;
   return (
     <div
-      style={{
-        position: "fixed",
-        top: 24,
-        right: 0,
-        zIndex: 9999,
-        background: cores[tipo] || "#3498db",
-        color: "#fff",
-        padding: "14px 50px",
-        borderRadius: "8px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-        minWidth: "220px",
-        fontWeight: "bold"
-      }}
-      onClick={onClose}
+      className={`toast align-items-center text-bg-${tipoBootstrap} border-0 show`}
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      style={{ width: "100%" }}
     >
-      {mensagem}
-      <button
-        style={{
-          background: "transparent",
-          border: "none",
-          color: "#fff",
-          fontSize: "1.2em",
-          float: "center",
-          marginLeft: "12px",
-          cursor: "pointer"
-        }}
-        title="Fechar"
-        onClick={onClose}
-      >
-        ×
-      </button>
+      <div className="d-flex">
+        <div className="toast-body">{mensagem}</div>
+        <button
+          type="button"
+          className="btn-close btn-close-white me-2 m-auto"
+          data-bs-dismiss="toast"
+          aria-label="Close"
+          onClick={onClose}
+        ></button>
+      </div>
     </div>
   );
 }
@@ -66,7 +48,7 @@ function transformarProdutos(dadosAPI) {
   }));
 }
 
-function Carrinho({ aberto, itens, onFechar, onRemover }) {
+function Carrinho({ aberto, itens, onFechar, onRemover, toastCarrinho, onCloseToastCarrinho }) {
   const total = itens.reduce((acc, item) => acc + item.preco * item.quantidade, 0);
   return (
     <div
@@ -84,6 +66,13 @@ function Carrinho({ aberto, itens, onFechar, onRemover }) {
         <button type="button" className="btn-close" onClick={onFechar}></button>
       </div>
       <div className="offcanvas-body">
+        {/* Toast do carrinho aparece dentro do carrinho */}
+        <ToastBootstrap
+          mensagem={toastCarrinho.mensagem}
+          tipo={toastCarrinho.tipo}
+          show={!!toastCarrinho.mensagem}
+          onClose={onCloseToastCarrinho}
+        />
         <ul className="list-group mb-3">
           {itens.length === 0 ? (
             <li className="list-group-item">Carrinho vazio</li>
@@ -273,13 +262,23 @@ export default function App() {
 
   // Toast state
   const [toast, setToast] = useState({ mensagem: "", tipo: "info" });
-
-
+  const [toastCadastro, setToastCadastro] = useState({ mensagem: "", tipo: "info" });
+  const [toastCarrinho, setToastCarrinho] = useState({ mensagem: "", tipo: "info" });
 
   // Função para mostrar toast
   function mostrarToast(mensagem, tipo = "info") {
     setToast({ mensagem, tipo });
     setTimeout(() => setToast({ mensagem: "", tipo }), 3500);
+  }
+
+  function mostrarToastCadastro(mensagem, tipo = "info") {
+    setToastCadastro({ mensagem, tipo });
+    setTimeout(() => setToastCadastro({ mensagem: "", tipo }), 3500);
+  }
+
+  function mostrarToastCarrinho(mensagem, tipo = "info") {
+    setToastCarrinho({ mensagem, tipo });
+    setTimeout(() => setToastCarrinho({ mensagem: "", tipo }), 3500);
   }
 
   useEffect(() => {
@@ -303,7 +302,7 @@ export default function App() {
       .then(res => res.json())
       .then(data => setProdutos(transformarProdutos(data)));
   }, []);
-  Toast
+
   function ordenarProdutos(lista) {
     let novaLista = [...lista];
     if (ordem === "alfabetica") {
@@ -356,12 +355,12 @@ export default function App() {
 
     // Nunca permitir retirar mais do que o volumeInicial - 10ml
     if (totalMlNoCarrinho + mlVenda > produto.volumeInicial - 10) {
-      mostrarToast("Sem estoque", "error");
+      mostrarToastCarrinho("Sem estoque", "error");
       return;
     }
 
     if (estoqueDisponivel < mlVenda) {
-      mostrarToast("Sem estoque", "error");
+      mostrarToastCarrinho("Sem estoque", "error");
       return;
     }
 
@@ -387,7 +386,7 @@ export default function App() {
       localStorage.setItem("carrinho", JSON.stringify(novoCarrinho));
     }
 
-    mostrarToast("Produto adicionado ao carrinho!", "success");
+    mostrarToastCarrinho("Produto adicionado ao carrinho!", "success");
     setCarrinhoAberto(true);
   }
 
@@ -396,7 +395,7 @@ export default function App() {
     novoCarrinho.splice(idx, 1);
     setCarrinho(novoCarrinho);
     localStorage.setItem("carrinho", JSON.stringify(novoCarrinho));
-    mostrarToast("Item removido do carrinho.", "info");
+    mostrarToastCarrinho("Item removido do carrinho.", "info");
   }
 
   const totalItens = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
@@ -404,10 +403,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="container py-4">
-        {/* Toast visual */}
-        <Toast
+        {/* Toast visual global (ex: login/logout) */}
+        <ToastBootstrap
           mensagem={toast.mensagem}
           tipo={toast.tipo}
+          show={!!toast.mensagem}
           onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
         />
         <nav className="navbar mb-4">
@@ -477,6 +477,13 @@ export default function App() {
         {/* Renderização das telas do menu conta */}
         {contaMenu === "criar" && (
           <div className="container" style={{ maxWidth: 400 }}>
+            {/* Toast aparece dentro do container de cadastro */}
+            <ToastBootstrap
+              mensagem={toastCadastro.mensagem}
+              tipo={toastCadastro.tipo}
+              show={!!toastCadastro.mensagem}
+              onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+            />
             <div className="card p-4 ">
               <h4 style={{ textAlign: "center", color: "black" }}>Criar Conta</h4>
               <form
@@ -496,10 +503,10 @@ export default function App() {
                       mostrarToast("Conta criada com sucesso!", "success");
                       setContaMenu("login");
                     } else {
-                      mostrarToast(data.message || "Erro ao criar conta.", "error");
+                      mostrarToastCadastro(data.message || "Erro ao criar conta.", "error");
                     }
                   } catch {
-                    mostrarToast("Erro de conexão.", "error");
+                    mostrarToastCadastro("Erro de conexão.", "error");
                   }
                 }}
               >
@@ -714,6 +721,8 @@ export default function App() {
           itens={carrinho}
           onFechar={() => setCarrinhoAberto(false)}
           onRemover={removerDoCarrinho}
+          toastCarrinho={toastCarrinho}
+          onCloseToastCarrinho={() => setToastCarrinho({ mensagem: "", tipo: toastCarrinho.tipo })}
         />
       </div>
     </BrowserRouter>
