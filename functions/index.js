@@ -21,6 +21,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/api/usuarios", async (req, res) => {
+  console.log("Recebido cadastro:", req.body);
   try {
     const {nome, email, senha} = req.body;
     if (!nome || !email || !senha) {
