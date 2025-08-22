@@ -1,7 +1,7 @@
 const functions = require("firebase-functions/v2");
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 
