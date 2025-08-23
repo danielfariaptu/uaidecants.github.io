@@ -14,7 +14,10 @@ const db = admin.firestore();
 
 const app = express();
 
-app.use(cors({origin: true}));
+app.use(cors({
+  origin: "http://127.0.0.1:5173",
+  credentials: true}));
+
 app.use(express.json());
 
 // Rota de teste
@@ -48,24 +51,12 @@ function isEmailTemporario(email) {
   );
 }
 
-async function autenticarUsuario(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization;
-    const idToken = authHeader && authHeader.split("Bearer ")[1];
-    if (!idToken) {
-      return res.status(401).json({ success: false, message: "Token ausente." });
-    }
-    const decoded = await admin.auth().verifyIdToken(idToken);
-    if (!decoded.email_verified) {
-      return res.status(403).json({ success: false, message: "Verifique seu e-mail." });
-    }
-    req.usuario = decoded; // opcional: passa dados do usuário para a rota
-    next();
-  } catch (err) {
-    return res.status(401).json({ success: false, message: "Token inválido." });
-  }
-}
-
+/**
+ * Salva log de ação do admin no Firestore.
+ * @param {string} acao - Nome da ação realizada pelo admin.
+ * @param {Object} detalhes - Detalhes da ação.
+ * @return {Promise<void>}
+ */
 async function registrarLogAdmin(acao, detalhes) {
   await db.collection("logs_admin").add({
     acao,
@@ -74,23 +65,29 @@ async function registrarLogAdmin(acao, detalhes) {
   });
 }
 
+/**
+ * Middleware para autenticação do admin via cookie seguro.
+ * @param {Object} req - Objeto de requisição Express.
+ * @param {Object} res - Objeto de resposta Express.
+ * @param {Function} next - Função para continuar o middleware.
+ * @return {void}
+ */
 function autenticarAdmin(req, res, next) {
   const cookies = cookie.parse(req.headers.cookie || "");
   if (cookies.adminAuth === "true") {
     return next();
   }
-  return res.status(401).json({ success: false, message:
-    "Acesso restrito ao admin." });
+  return res.status(401).json({success: false, message:
+  "Acesso restrito ao admin."});
 }
 
 app.post("/logout-admin", (req, res) => {
-  res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "", {
+  res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "true", {
     httpOnly: true,
-    secure: true,
-    sameSite: "strict",
+    secure: false, // Para localhost, use false. Em produção, use true.
+    sameSite: "none",//Permite cross-site com none- strict prod
     path: "/",
-    maxAge: 0,
-  }));
+    maxAge: 60 * 60}));
   res.json({success: true});
 });
 
@@ -253,8 +250,8 @@ app.post("/login-admin-daniel-faria", async (req, res) => {
     // Gera cookie seguro
     res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "true", {
       httpOnly: true,
-      secure: true,
-      sameSite: "strict",
+      secure: false,// Para localhost, use false
+      sameSite: "none",//none Permite cross-site - strict producao
       path: "/",
       maxAge: 60 * 60, // 1 hora
     }));
@@ -268,8 +265,7 @@ app.post("/login-admin-daniel-faria", async (req, res) => {
 });
 
 // Cadastrar perfume
-app.post("/api/perfumes", autenticarAdmin, async (req, res) => {
-
+app.post("/api/perfumes", autenticarAdmin, async (req, res) =>{
   try {
     console.log("Dados recebidos:", req.body);
     const perfume = {...req.body, ativo: true};

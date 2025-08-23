@@ -117,6 +117,7 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
       });
       const data = await resp.json();
       if (data.success) {
+        onLogin(true);
         await checarAdminLogado();
         setSenhaAdmin("");
         setErroLogin("");
@@ -127,7 +128,7 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
       }
     } catch (err) {
       setErroLogin("Erro ao conectar ao servidor.");
-      mostrarToast("Erro ao conectar ao servidor.", "error");
+      mostrarToast(err.message || "Erro desconhecido", "error");
     }
   }
 
@@ -777,6 +778,7 @@ export default function App() {
                 }}
                 adminLogado={adminLogado}
                 mostrarToast={mostrarToast}
+                checarAdminLogado={checarAdminLogado}
               />
             }
           />
