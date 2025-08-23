@@ -4,6 +4,8 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
+const cookie = require("cookie");
+
 
 // Inicializa o Firebase Admin
 admin.initializeApp();
@@ -45,6 +47,52 @@ function isEmailTemporario(email) {
       (temp) => dominio === temp || dominio.endsWith("." + temp),
   );
 }
+
+async function autenticarUsuario(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    const idToken = authHeader && authHeader.split("Bearer ")[1];
+    if (!idToken) {
+      return res.status(401).json({ success: false, message: "Token ausente." });
+    }
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    if (!decoded.email_verified) {
+      return res.status(403).json({ success: false, message: "Verifique seu e-mail." });
+    }
+    req.usuario = decoded; // opcional: passa dados do usuário para a rota
+    next();
+  } catch (err) {
+    return res.status(401).json({ success: false, message: "Token inválido." });
+  }
+}
+
+async function registrarLogAdmin(acao, detalhes) {
+  await db.collection("logs_admin").add({
+    acao,
+    detalhes,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+function autenticarAdmin(req, res, next) {
+  const cookies = cookie.parse(req.headers.cookie || "");
+  if (cookies.adminAuth === "true") {
+    return next();
+  }
+  return res.status(401).json({ success: false, message:
+    "Acesso restrito ao admin." });
+}
+
+app.post("/logout-admin", (req, res) => {
+  res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+    path: "/",
+    maxAge: 0,
+  }));
+  res.json({success: true});
+});
 
 app.post("/api/protected", async (req, res) => {
   try {
@@ -202,6 +250,14 @@ app.post("/login-admin-daniel-faria", async (req, res) => {
   }
   const match = await bcrypt.compare(senha, ADMIN_HASH);
   if (match) {
+    // Gera cookie seguro
+    res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "true", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      path: "/",
+      maxAge: 60 * 60, // 1 hora
+    }));
     res.json({success: true});
   } else {
     res.status(401).json({
@@ -212,11 +268,13 @@ app.post("/login-admin-daniel-faria", async (req, res) => {
 });
 
 // Cadastrar perfume
-app.post("/api/perfumes", async (req, res) => {
+app.post("/api/perfumes", autenticarAdmin, async (req, res) => {
+
   try {
     console.log("Dados recebidos:", req.body);
     const perfume = {...req.body, ativo: true};
     const docRef = await db.collection("perfumes").add(perfume);
+    await registrarLogAdmin("cadastrar_perfume", {id: docRef.id, ...perfume});
     res.json({
       id: docRef.id,
       ...perfume,
@@ -259,9 +317,10 @@ app.get("/api/perfumes/ativos", async (req, res) => {
 });
 
 // Editar perfume
-app.put("/api/perfumes/:id", async (req, res) => {
+app.put("/api/perfumes/:id", autenticarAdmin, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).update(req.body);
+    await registrarLogAdmin("editar_perfume", {id: req.params.id, ...req.body});
     res.json({
       id: req.params.id,
       ...req.body,
@@ -272,9 +331,10 @@ app.put("/api/perfumes/:id", async (req, res) => {
 });
 
 // Excluir perfume
-app.delete("/api/perfumes/:id", async (req, res) => {
+app.delete("/api/perfumes/:id", autenticarAdmin, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).delete();
+    await registrarLogAdmin("excluir_perfume", {id: req.params.id});
     res.json({success: true});
   } catch (err) {
     res.status(500).json({error: err.message});
@@ -282,9 +342,10 @@ app.delete("/api/perfumes/:id", async (req, res) => {
 });
 
 // Desativar perfume
-app.post("/api/perfumes/:id/desativar", async (req, res) => {
+app.post("/api/perfumes/:id/desativar", autenticarAdmin, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).update({ativo: false});
+    await registrarLogAdmin("desativar_perfume", {id: req.params.id});
     res.json({success: true});
   } catch (err) {
     res.status(500).json({error: err.message});
@@ -292,9 +353,10 @@ app.post("/api/perfumes/:id/desativar", async (req, res) => {
 });
 
 // Ativar perfume
-app.post("/api/perfumes/:id/ativar", async (req, res) => {
+app.post("/api/perfumes/:id/ativar", autenticarAdmin, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).update({ativo: true});
+    await registrarLogAdmin("ativar_perfume", {id: req.params.id});
     res.json({success: true});
   } catch (err) {
     res.status(500).json({error: err.message});

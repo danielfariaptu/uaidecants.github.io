@@ -4,7 +4,6 @@ import PerfumeAdmin from "./PerfumeAdmin.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 
-
 // Toast visual feedback (Bootstrap, sem CSS extra)
 function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
   if (!show || !mensagem) return null;
@@ -113,11 +112,12 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
       const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/login-admin-daniel-faria", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ senha: senhaAdmin })
+        body: JSON.stringify({ senha: senhaAdmin }),
+        credentials: "include"
       });
       const data = await resp.json();
       if (data.success) {
-        onLogin(true);
+        await checarAdminLogado();
         setSenhaAdmin("");
         setErroLogin("");
         mostrarToast("Login realizado com sucesso!", "success");
@@ -137,14 +137,17 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
         <h3>Painel Admin</h3>
         <button
           className="btn btn-outline-danger mb-3"
-          onClick={() => {
-            onLogin(false);
+          onClick={async () => {
+            await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/logout-admin", { method: "POST", credentials: "include" });
+            await checarAdminLogado();
             mostrarToast("Logout realizado.", "info");
+            // Opcional: redirecionar
+            window.location.href = "/";
           }}
         >
           Sair
         </button>
-        <PerfumeAdmin />
+        <PerfumeAdmin adminLogado={adminLogado} />
       </div>
     );
   }
@@ -167,6 +170,7 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
 
 // Dropdown de Minha Conta
 function MenuConta({ logado, onLogin, onLogout }) {
+
   const [aberto, setAberto] = useState(false);
 
   function handleClick(action) {
@@ -254,9 +258,7 @@ export default function App() {
   });
   const [busca, setBusca] = useState("");
   const itensPorPagina = 6;
-  const [adminLogado, setAdminLogado] = useState(() => {
-    return localStorage.getItem("adminLogado") === "true";
-  });
+  const [adminLogado, setAdminLogado] = useState(false);
 
   // Estados para menu de conta
   const [contaMenu, setContaMenu] = useState(""); // controla qual tela do menu conta
@@ -266,6 +268,18 @@ export default function App() {
   const [toast, setToast] = useState({ mensagem: "", tipo: "info" });
   const [toastCadastro, setToastCadastro] = useState({ mensagem: "", tipo: "info" });
   const [toastCarrinho, setToastCarrinho] = useState({ mensagem: "", tipo: "info" });
+
+  async function checarAdminLogado() {
+    try {
+      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes", {
+        method: "GET",
+        credentials: "include"
+      });
+      setAdminLogado(resp.status === 200);
+    } catch {
+      setAdminLogado(false);
+    }
+  }
 
   // Função para mostrar toast
   function mostrarToast(mensagem, tipo = "info") {
@@ -283,9 +297,7 @@ export default function App() {
     setTimeout(() => setToastCarrinho({ mensagem: "", tipo }), 3500);
   }
 
-  useEffect(() => {
-    localStorage.setItem("adminLogado", adminLogado ? "true" : "false");
-  }, [adminLogado]);
+
   useEffect(() => {
     localStorage.setItem("carrinho", JSON.stringify(carrinho));
   }, [carrinho]);
@@ -303,6 +315,10 @@ export default function App() {
     fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes")
       .then(res => res.json())
       .then(data => setProdutos(transformarProdutos(data)));
+  }, []);
+
+  useEffect(() => {
+    checarAdminLogado();
   }, []);
 
   function ordenarProdutos(lista) {
@@ -547,13 +563,16 @@ export default function App() {
                   const auth = getAuth();
                   try {
                     const userCredential = await signInWithEmailAndPassword(auth, email, senha);
-
                     const user = userCredential.user;
+
                     if (!user.emailVerified) {
                       mostrarToastCadastro("Verifique seu e-mail antes de acessar.", "error");
                       await auth.signOut();
                       return;
                     }
+
+                    const token = await user.getIdToken();
+                    localStorage.setItem("token", token);
                     setUsuarioLogado(true);
                     setContaMenu("");
                     mostrarToast("Login realizado com sucesso!", "success");
@@ -755,7 +774,6 @@ export default function App() {
               <LoginAdmin
                 onLogin={logado => {
                   setAdminLogado(!!logado);
-                  localStorage.setItem("adminLogado", logado ? "true" : "false");
                 }}
                 adminLogado={adminLogado}
                 mostrarToast={mostrarToast}
