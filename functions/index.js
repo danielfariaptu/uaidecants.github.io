@@ -46,7 +46,27 @@ function isEmailTemporario(email) {
   );
 }
 
-app.post("/api/usuarios", async (req, res) =>{
+app.post("/api/protected", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const idToken = authHeader && authHeader.split("Bearer ")[1];
+    if (!idToken) {
+      return res.status(401).json({success: false, message:
+        "Token ausente."});
+    }
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    if (!decoded.email_verified) {
+      return res.status(403).json({success: false, message:
+        "Verifique seu e-mail."});
+    }
+    // Usuário autenticado e verificado
+    res.json({success: true, message: "Acesso permitido."});
+  } catch (err) {
+    res.status(401).json({success: false, message: "Token inválido."});
+  }
+});
+
+app.post("/api/usuarios", async (req, res) => {
   try {
     const {nome, email, senha} = req.body;
     if (!nome || !email || !senha) {
@@ -56,6 +76,7 @@ app.post("/api/usuarios", async (req, res) =>{
       });
     }
 
+    // Verifica se já existe no Firestore
     const snapshot = await db
         .collection("usuarios")
         .where("email", "==", email)
@@ -74,19 +95,25 @@ app.post("/api/usuarios", async (req, res) =>{
       });
     }
 
-    // Criptografa a senha
-    const hash = await bcrypt.hash(senha, 10);
+    // Cria usuário no Firebase Auth
+    try {
+      await admin.auth().createUser({
+        email,
+        password: senha,
+        displayName: nome,
+      });
+    } catch (error) {
+      console.error("Erro ao criar usuário no Firebase Auth:", error);
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
 
-    // Salva usuário
-    const usuario = {
-      nome,
-      email,
-      senha: hash,
-      criadoEm: new Date().toISOString(),
-    };
-    const docRef = await db.collection("usuarios").add(usuario);
+    // Gera link de verificação de e-mail
+    const link = await admin.auth().generateEmailVerificationLink(email);
 
-    // Envia e-mail de boas-vindas
+    // Envia e-mail de verificação
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -106,16 +133,16 @@ app.post("/api/usuarios", async (req, res) =>{
         <h2 style="color:#3498db;">Bem-vindo(a) à Uai Decants!</h2>
         <p>Olá, <strong>${nome}</strong>!</p>
         <p>
-          Obrigado por criar sua conta. Agora você pode comprar decants
-          dos melhores perfumes do Brasil!
+          Obrigado por criar sua conta.<br>
+          <b>Antes de acessar, confirme seu e-mail:</b>
         </p>
         <p style="margin:24px 0;">
           <a
-            href="https://uaidecants.com.br"
+            href="${link}"
             style="background:#27ae60; color:#fff; padding:12px 32px;
               border-radius:8px; text-decoration:none; font-weight:bold;"
           >
-            Acessar Loja
+            Confirmar E-mail
           </a>
         </p>
         <hr style="margin:32px 0;">
@@ -132,20 +159,34 @@ app.post("/api/usuarios", async (req, res) =>{
     await transporter.sendMail({
       from: "\"Uai Decants\" <suporte@uaidecants.com.br>",
       to: email,
-      subject: "Bem-vindo(a) à Uai Decants!",
+      subject: "Confirme seu e-mail na Uai Decants!",
       html,
     });
+
+    // Criptografa a senha
+    const hash = await bcrypt.hash(senha, 10);
+
+    // Salva usuário no Firestore
+    const usuario = {
+      nome,
+      email,
+      senha: hash,
+      criadoEm: new Date().toISOString(),
+      emailVerificado: false, // controle extra se quiser
+    };
+    const docRef = await db.collection("usuarios").add(usuario);
 
     res.json({
       success: true,
       id: docRef.id,
       nome,
       email,
+      message: "Conta criada! Verifique seu e-mail antes de acessar.",
     });
   } catch (err) {
     res.status(400).json({
       success: false,
-      message: "Nome, email e senha são obrigatórios.",
+      message: "Erro ao criar conta.",
     });
   }
 });

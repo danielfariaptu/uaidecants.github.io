@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+
 
 // Toast visual feedback (Bootstrap, sem CSS extra)
 function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
@@ -500,7 +502,7 @@ export default function App() {
                     });
                     const data = await resp.json();
                     if (data.success) {
-                      mostrarToast("Conta criada com sucesso!", "success");
+                      mostrarToastCadastro("Conta criada com sucesso!", "success");
                       setContaMenu("login");
                     } else {
                       mostrarToastCadastro(data.message || "Erro ao criar conta.", "error");
@@ -527,7 +529,52 @@ export default function App() {
             </div>
           </div>
         )}
-        {contaMenu === "login" && <div className="container"><h4>Iniciar Sessão</h4>{/* Formulário de login aqui */}</div>}
+        {contaMenu === "login" && (
+          <div className="container" style={{ maxWidth: 400 }}>
+            <ToastBootstrap
+              mensagem={toastCadastro.mensagem}
+              tipo={toastCadastro.tipo}
+              show={!!toastCadastro.mensagem}
+              onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+            />
+            <div className="card p-4">
+              <h4 style={{ textAlign: "center", color: "black" }}>Iniciar Sessão</h4>
+              <form
+                onSubmit={async e => {
+                  e.preventDefault();
+                  const email = e.target.email.value;
+                  const senha = e.target.senha.value;
+                  const auth = getAuth();
+                  try {
+                    const userCredential = await signInWithEmailAndPassword(auth, email, senha);
+
+                    const user = userCredential.user;
+                    if (!user.emailVerified) {
+                      mostrarToastCadastro("Verifique seu e-mail antes de acessar.", "error");
+                      await auth.signOut();
+                      return;
+                    }
+                    setUsuarioLogado(true);
+                    setContaMenu("");
+                    mostrarToast("Login realizado com sucesso!", "success");
+                  } catch (err) {
+                    mostrarToastCadastro("Usuário não encontrado ou senha incorreta.", "error");
+                  }
+                }}
+              >
+                <div className="mb-2">
+                  <label className="form-label">Email</label>
+                  <input type="email" name="email" className="form-control" required />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label">Senha</label>
+                  <input type="password" name="senha" className="form-control" required />
+                </div>
+                <button type="submit" className="btn btn-primary w-100">Entrar</button>
+              </form>
+            </div>
+          </div>
+        )}
         {contaMenu === "convidado" && <div className="container"><h4>Checkout como Convidado</h4>{/* Checkout simples aqui */}</div>}
         {contaMenu === "dados" && <div className="container"><h4>Meus Dados</h4>{/* Dados do usuário aqui */}</div>}
         {contaMenu === "enderecos" && <div className="container"><h4>Endereços</h4>{/* Endereços do usuário aqui */}</div>}
