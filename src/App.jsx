@@ -101,7 +101,7 @@ function Carrinho({ aberto, itens, onFechar, onRemover, toastCarrinho, onCloseTo
   );
 }
 
-function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
+function LoginAdmin({ onLogin, adminLogado, mostrarToast, checarAdminLogado }) {
   const [senhaAdmin, setSenhaAdmin] = useState("");
   const [erroLogin, setErroLogin] = useState("");
 
@@ -109,7 +109,7 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
     e.preventDefault();
     setErroLogin("");
     try {
-      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/login-admin-daniel-faria", {
+      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/godpleaseno", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ senha: senhaAdmin }),
@@ -271,16 +271,16 @@ export default function App() {
   const [toastCarrinho, setToastCarrinho] = useState({ mensagem: "", tipo: "info" });
 
   async function checarAdminLogado() {
-    try {
-      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes", {
-        method: "GET",
-        credentials: "include"
-      });
-      setAdminLogado(resp.status === 200);
-    } catch {
-      setAdminLogado(false);
-    }
+  try {
+    const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/admin-check", {
+      method: "GET",
+      credentials: "include"
+    });
+    setAdminLogado(resp.status === 200);
+  } catch {
+    setAdminLogado(false);
   }
+}
 
   // Função para mostrar toast
   function mostrarToast(mensagem, tipo = "info") {
@@ -770,15 +770,13 @@ export default function App() {
             }
           />
           <Route
-            path="/login-admin-daniel-faria"
+            path="/godpleaseno"
             element={
               <LoginAdmin
-                onLogin={logado => {
-                  setAdminLogado(!!logado);
-                }}
+                onLogin={logado => setAdminLogado(!!logado)}
                 adminLogado={adminLogado}
                 mostrarToast={mostrarToast}
-                checarAdminLogado={checarAdminLogado}
+                checarAdminLogado={checarAdminLogado} // Adicione esta linha
               />
             }
           />

@@ -82,12 +82,12 @@ function autenticarAdmin(req, res, next) {
 }
 
 app.post("/logout-admin", (req, res) => {
-  res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "true", {
+  res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "", {
     httpOnly: true,
     secure: false, // Para localhost, use false. Em produção, use true.
-    sameSite: "none",//Permite cross-site com none- strict prod
+    sameSite: "lax", // Permite cross-site com none- strict prod
     path: "/",
-    maxAge: 60 * 60}));
+    maxAge: 0}));
   res.json({success: true});
 });
 
@@ -236,7 +236,11 @@ app.post("/api/usuarios", async (req, res) => {
   }
 });
 
-app.post("/login-admin-daniel-faria", async (req, res) => {
+app.get("/api/admin-check", autenticarAdmin, (req, res) => {
+  res.json({success: true});
+});
+
+app.post("/godpleaseno", async (req, res) => {
   const {senha} = req.body;
   const ADMIN_HASH = process.env.ADMIN_HASH;
   if (!ADMIN_HASH) {
@@ -250,8 +254,8 @@ app.post("/login-admin-daniel-faria", async (req, res) => {
     // Gera cookie seguro
     res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "true", {
       httpOnly: true,
-      secure: false,// Para localhost, use false
-      sameSite: "none",//none Permite cross-site - strict producao
+      secure: false, // Para localhost, use false
+      sameSite: "lax", // none Permite cross-site - strict producao
       path: "/",
       maxAge: 60 * 60, // 1 hora
     }));
