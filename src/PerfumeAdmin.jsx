@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-const API = "https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes";
+const API = "https://us-central1-uaidecants.cloudfunctions.net/api/perfumes";
 
 export default function PerfumeAdmin({ adminLogado }) {
 
@@ -30,9 +30,9 @@ export default function PerfumeAdmin({ adminLogado }) {
     fetch(API, {
       method: "POST",
       headers: {
-      "Content-Type": "application/json",
-      "x-admin-auth": adminLogado ? "true" : "false",
-    },
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ ...novo, pedidos: 0 })
     })
       .then(res => res.json())
@@ -62,13 +62,17 @@ export default function PerfumeAdmin({ adminLogado }) {
     fetch(`${API}/${id}`, {
       method: "PUT",
       headers: {
-      "Content-Type": "application/json",
-      "x-admin-auth": adminLogado ? "true" : "false",
-    },
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(editando)
     })
       .then(res => res.json())
       .then(p => {
+        if (p.error) {
+          alert("Erro: " + p.error);
+          return;
+        }
         setPerfumes(perfumes.map(perf => perf.id === id ? p : perf));
         setEditando(null);
       })
@@ -79,40 +83,40 @@ export default function PerfumeAdmin({ adminLogado }) {
   }
 
   function excluirPerfume(id) {
-  const token = localStorage.getItem("token");
-  fetch(`${API}/${id}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-auth": adminLogado ? "true" : "false",
-    },
-  })
-    .then(() => setPerfumes(perfumes.filter(p => p.id !== id)))
-    .catch(err => {
-      console.error("Erro ao excluir perfume:", err);
-      alert("Erro ao excluir perfume!");
-    });
-}
+    const token = localStorage.getItem("token");
+    fetch(`${API}/${id}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then(() => setPerfumes(perfumes.filter(p => p.id !== id)))
+      .catch(err => {
+        console.error("Erro ao excluir perfume:", err);
+        alert("Erro ao excluir perfume!");
+      });
+  }
 
   function ativarDesativar(id, ativo) {
-  const token = localStorage.getItem("token");
-  fetch(`${API}/${id}/${ativo ? "desativar" : "ativar"}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-auth": adminLogado ? "true" : "false",
-    },
-  })
-    .then(() =>
-      setPerfumes(perfumes.map(p =>
-        p.id === id ? { ...p, ativo: !ativo } : p
-      ))
-    )
-    .catch(err => {
-      console.error("Erro ao ativar/desativar perfume:", err);
-      alert("Erro ao ativar/desativar perfume!");
-    });
-}
+    const token = localStorage.getItem("token");
+    fetch(`${API}/${id}/${ativo ? "desativar" : "ativar"}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then(() =>
+        setPerfumes(perfumes.map(p =>
+          p.id === id ? { ...p, ativo: !ativo } : p
+        ))
+      )
+      .catch(err => {
+        console.error("Erro ao ativar/desativar perfume:", err);
+        alert("Erro ao ativar/desativar perfume!");
+      });
+  }
 
   return (
     <div>

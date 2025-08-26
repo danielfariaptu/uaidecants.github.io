@@ -2,7 +2,9 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "./firebaseConfig";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { signOut } from "firebase/auth";
 
 // Toast visual feedback (Bootstrap, sem CSS extra)
 function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
@@ -101,34 +103,48 @@ function Carrinho({ aberto, itens, onFechar, onRemover, toastCarrinho, onCloseTo
   );
 }
 
-function LoginAdmin({ onLogin, adminLogado, mostrarToast, checarAdminLogado }) {
+function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
+  const [emailAdmin, setEmailAdmin] = useState("");
   const [senhaAdmin, setSenhaAdmin] = useState("");
   const [erroLogin, setErroLogin] = useState("");
+
+  useEffect(() => {
+  async function check() {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      onLogin(false);
+      return;
+    }
+    try {
+      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/admin-check", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      onLogin(resp.status === 200);
+    } catch {
+      onLogin(false);
+    }
+  }
+  check();
+}, [onLogin]);
 
   async function handleLoginAdmin(e) {
     e.preventDefault();
     setErroLogin("");
     try {
-      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/godpleaseno", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ senha: senhaAdmin }),
-        credentials: "include"
-      });
-      const data = await resp.json();
-      if (data.success) {
-        onLogin(true);
-        await checarAdminLogado();
-        setSenhaAdmin("");
-        setErroLogin("");
-        mostrarToast("Login realizado com sucesso!", "success");
-      } else {
-        setErroLogin(data.message || "Senha incorreta!");
-        mostrarToast("Senha incorreta!", "error");
-      }
+
+      const userCredential = await signInWithEmailAndPassword(auth, emailAdmin, senhaAdmin);
+      const user = userCredential.user;
+      const token = await user.getIdToken();
+      localStorage.setItem("token", token);
+      onLogin(true);
+      mostrarToast("Login realizado com sucesso!", "success");
+      setEmailAdmin("");
+      setSenhaAdmin("");
+      setErroLogin("");
     } catch (err) {
-      setErroLogin("Erro ao conectar ao servidor.");
-      mostrarToast(err.message || "Erro desconhecido", "error");
+      setErroLogin("Senha ou e-mail incorretos!");
+      mostrarToast("Senha ou e-mail incorretos!", "error");
     }
   }
 
@@ -139,10 +155,11 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast, checarAdminLogado }) {
         <button
           className="btn btn-outline-danger mb-3"
           onClick={async () => {
-            await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/logout-admin", { method: "POST", credentials: "include" });
-            await checarAdminLogado();
+            await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/logout-admin", { method: "POST" });
+            localStorage.removeItem("token");
+            onLogin(false);
+            await signOut(auth);
             mostrarToast("Logout realizado.", "info");
-            // Opcional: redirecionar
             window.location.href = "/";
           }}
         >
@@ -157,11 +174,20 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast, checarAdminLogado }) {
     <form onSubmit={handleLoginAdmin} style={{ maxWidth: 300, margin: "32px auto" }}>
       <h3>Login Admin</h3>
       <input
+        type="email"
+        className="form-control mb-2"
+        placeholder="E-mail do admin"
+        value={emailAdmin}
+        onChange={e => setEmailAdmin(e.target.value)}
+        required
+      />
+      <input
         type="password"
         className="form-control mb-2"
         placeholder="Senha do admin"
         value={senhaAdmin}
         onChange={e => setSenhaAdmin(e.target.value)}
+        required
       />
       <button type="submit" className="btn btn-primary w-100">Entrar</button>
       {erroLogin && <div className="text-danger mt-2">{erroLogin}</div>}
@@ -271,16 +297,17 @@ export default function App() {
   const [toastCarrinho, setToastCarrinho] = useState({ mensagem: "", tipo: "info" });
 
   async function checarAdminLogado() {
-  try {
-    const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/admin-check", {
-      method: "GET",
-      credentials: "include"
-    });
-    setAdminLogado(resp.status === 200);
-  } catch {
-    setAdminLogado(false);
+    const token = localStorage.getItem("token");
+    try {
+      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/admin-check", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAdminLogado(resp.status === 200);
+    } catch {
+      setAdminLogado(false);
+    }
   }
-}
 
   // Função para mostrar toast
   function mostrarToast(mensagem, tipo = "info") {
@@ -313,7 +340,7 @@ export default function App() {
   }, [pagina]);
 
   useEffect(() => {
-    fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/perfumes")
+    fetch("https://us-central1-uaidecants.cloudfunctions.net/api/perfumes")
       .then(res => res.json())
       .then(data => setProdutos(transformarProdutos(data)));
   }, []);
@@ -512,7 +539,7 @@ export default function App() {
                   const email = e.target.email.value;
                   const senha = e.target.senha.value;
                   try {
-                    const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/api/usuarios", {
+                    const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/usuarios", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ nome, email, senha })
@@ -561,7 +588,7 @@ export default function App() {
                   e.preventDefault();
                   const email = e.target.email.value;
                   const senha = e.target.senha.value;
-                  const auth = getAuth();
+
                   try {
                     const userCredential = await signInWithEmailAndPassword(auth, email, senha);
                     const user = userCredential.user;
@@ -776,7 +803,6 @@ export default function App() {
                 onLogin={logado => setAdminLogado(!!logado)}
                 adminLogado={adminLogado}
                 mostrarToast={mostrarToast}
-                checarAdminLogado={checarAdminLogado} // Adicione esta linha
               />
             }
           />

@@ -4,8 +4,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
-const cookie = require("cookie");
-
+const ADMINS = ["danielfari4@gmail.com"];
 
 // Inicializa o Firebase Admin
 admin.initializeApp();
@@ -14,13 +13,24 @@ const db = admin.firestore();
 
 const app = express();
 
+
 app.use(cors({
-  origin: "http://127.0.0.1:5173",
-  credentials: true}));
+  origin: [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "https://localhost:5173",
+    "https://uaidecants.web.app",
+    "http://127.0.0.1:5000",
+    "https://127.0.0.1:5173",
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]}));
+
+app.options("*", cors());
 
 app.use(express.json());
 
-// Rota de teste
 app.get("/", (req, res) => {
   res.send("API Uai Decants rodando com Firebase!");
 });
@@ -72,46 +82,30 @@ async function registrarLogAdmin(acao, detalhes) {
  * @param {Function} next - Função para continuar o middleware.
  * @return {void}
  */
-function autenticarAdmin(req, res, next) {
-  const cookies = cookie.parse(req.headers.cookie || "");
-  if (cookies.adminAuth === "true") {
-    return next();
-  }
-  return res.status(401).json({success: false, message:
-  "Acesso restrito ao admin."});
-}
-
-app.post("/logout-admin", (req, res) => {
-  res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "", {
-    httpOnly: true,
-    secure: false, // Para localhost, use false. Em produção, use true.
-    sameSite: "lax", // Permite cross-site com none- strict prod
-    path: "/",
-    maxAge: 0}));
-  res.json({success: true});
-});
-
-app.post("/api/protected", async (req, res) => {
+async function autenticarAdminJWT(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     const idToken = authHeader && authHeader.split("Bearer ")[1];
     if (!idToken) {
-      return res.status(401).json({success: false, message:
-        "Token ausente."});
+      return res.status(401).json({success: false, message: "Token ausente."});
     }
     const decoded = await admin.auth().verifyIdToken(idToken);
-    if (!decoded.email_verified) {
-      return res.status(403).json({success: false, message:
-        "Verifique seu e-mail."});
+    if (!ADMINS.includes(decoded.email)) {
+      return res.status(403).json({
+        success: false, message: "Acesso restrito ao admin."});
     }
-    // Usuário autenticado e verificado
-    res.json({success: true, message: "Acesso permitido."});
+    req.user = decoded;
+    next();
   } catch (err) {
-    res.status(401).json({success: false, message: "Token inválido."});
+    return res.status(401).json({success: false, message: "Token inválido."});
   }
+}
+
+app.post("/logout-admin", (req, res) => {
+  res.json({success: true});
 });
 
-app.post("/api/usuarios", async (req, res) => {
+app.post("/usuarios", async (req, res) => {
   try {
     const {nome, email, senha} = req.body;
     if (!nome || !email || !senha) {
@@ -236,40 +230,12 @@ app.post("/api/usuarios", async (req, res) => {
   }
 });
 
-app.get("/api/admin-check", autenticarAdmin, (req, res) => {
+app.get("/admin-check", autenticarAdminJWT, (req, res) => {
   res.json({success: true});
 });
 
-app.post("/godpleaseno", async (req, res) => {
-  const {senha} = req.body;
-  const ADMIN_HASH = process.env.ADMIN_HASH;
-  if (!ADMIN_HASH) {
-    return res.status(500).json({
-      success: false,
-      message: "Hash do admin não configurado no ambiente.",
-    });
-  }
-  const match = await bcrypt.compare(senha, ADMIN_HASH);
-  if (match) {
-    // Gera cookie seguro
-    res.setHeader("Set-Cookie", cookie.serialize("adminAuth", "true", {
-      httpOnly: true,
-      secure: false, // Para localhost, use false
-      sameSite: "lax", // none Permite cross-site - strict producao
-      path: "/",
-      maxAge: 60 * 60, // 1 hora
-    }));
-    res.json({success: true});
-  } else {
-    res.status(401).json({
-      success: false,
-      message: "Senha incorreta",
-    });
-  }
-});
-
 // Cadastrar perfume
-app.post("/api/perfumes", autenticarAdmin, async (req, res) =>{
+app.post("/perfumes", autenticarAdminJWT, async (req, res) =>{
   try {
     console.log("Dados recebidos:", req.body);
     const perfume = {...req.body, ativo: true};
@@ -286,7 +252,7 @@ app.post("/api/perfumes", autenticarAdmin, async (req, res) =>{
 });
 
 // Listar perfumes (todos)
-app.get("/api/perfumes", async (req, res) => {
+app.get("/perfumes", async (req, res) => {
   try {
     const snapshot = await db.collection("perfumes").get();
     const perfumes = [];
@@ -300,7 +266,7 @@ app.get("/api/perfumes", async (req, res) => {
 });
 
 // Listar perfumes ativos
-app.get("/api/perfumes/ativos", async (req, res) => {
+app.get("/perfumes/ativos", async (req, res) => {
   try {
     const snapshot = await db
         .collection("perfumes")
@@ -317,7 +283,7 @@ app.get("/api/perfumes/ativos", async (req, res) => {
 });
 
 // Editar perfume
-app.put("/api/perfumes/:id", autenticarAdmin, async (req, res) => {
+app.put("/perfumes/:id", autenticarAdminJWT, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).update(req.body);
     await registrarLogAdmin("editar_perfume", {id: req.params.id, ...req.body});
@@ -331,7 +297,7 @@ app.put("/api/perfumes/:id", autenticarAdmin, async (req, res) => {
 });
 
 // Excluir perfume
-app.delete("/api/perfumes/:id", autenticarAdmin, async (req, res) => {
+app.delete("/perfumes/:id", autenticarAdminJWT, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).delete();
     await registrarLogAdmin("excluir_perfume", {id: req.params.id});
@@ -342,7 +308,7 @@ app.delete("/api/perfumes/:id", autenticarAdmin, async (req, res) => {
 });
 
 // Desativar perfume
-app.post("/api/perfumes/:id/desativar", autenticarAdmin, async (req, res) => {
+app.post("/perfumes/:id/desativar", autenticarAdminJWT, async (req, res) =>{
   try {
     await db.collection("perfumes").doc(req.params.id).update({ativo: false});
     await registrarLogAdmin("desativar_perfume", {id: req.params.id});
@@ -353,7 +319,7 @@ app.post("/api/perfumes/:id/desativar", autenticarAdmin, async (req, res) => {
 });
 
 // Ativar perfume
-app.post("/api/perfumes/:id/ativar", autenticarAdmin, async (req, res) => {
+app.post("/perfumes/:id/ativar", autenticarAdminJWT, async (req, res) => {
   try {
     await db.collection("perfumes").doc(req.params.id).update({ativo: true});
     await registrarLogAdmin("ativar_perfume", {id: req.params.id});
@@ -364,5 +330,5 @@ app.post("/api/perfumes/:id/ativar", autenticarAdmin, async (req, res) => {
 });
 
 exports.api = functions.https.onRequest({
-  secrets: ["ADMIN_HASH", "ARROZ", "EMAIL_REMETENTE"],
+  secrets: ["ARROZ", "EMAIL_REMETENTE"],
 }, app);
