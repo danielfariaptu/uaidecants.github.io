@@ -137,8 +137,8 @@ function createApp() {
 
   app.post("/perfumes", autenticarAdminJWT, async (req, res) => {
     try {
-      const {imagemUrl, ...resto} = req.body;
-      const perfume = {...resto, imagemUrl: imagemUrl || null, ativo: true};
+      const {imagem, ...resto} = req.body;
+      const perfume = {...resto, imagem: imagem || null, ativo: true};
       const docRef = await db.collection("perfumes").add(perfume);
       await registrarLogAdmin("cadastrar_perfume", {id: docRef.id, ...perfume});
       res.json({id: docRef.id, ...perfume});
