@@ -1,0 +1,1 @@
+ firebase deploy --only functions:api --project uaidecants --debug
