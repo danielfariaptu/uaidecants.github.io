@@ -47,6 +47,22 @@ function createApp() {
     }
   }
 
+  // Middleware: autentica qualquer usuário (não admin)
+  async function autenticarUsuarioJWT(req, res, next) {
+    try {
+      const authHeader = req.headers.authorization || "";
+      const m = authHeader.match(/^Bearer\s+(.+)$/i);
+      const idToken = m ? m[1] : null;
+      if (!idToken) return res.status(401).json({success: false, message: "Token ausente."});
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      req.auth = decoded; // uid, email, etc.
+      next();
+    } catch (err) {
+      console.error("Auth user error:", err);
+      return res.status(401).json({success: false, message: "Token inválido."});
+    }
+  }
+
   const app = express();
 
   app.use(cors({
@@ -207,6 +223,150 @@ function createApp() {
       res.json({success: true});
     } catch (err) {
       res.status(500).json({error: err.message});
+    }
+  });
+
+  // ---------- Rotas: Perfil do usuário ----------
+  // Inicialização/leitura do perfil + endereços
+  app.get("/me/init", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const uid = req.auth.uid;
+      const email = req.auth.email || "";
+      const nomeToken = req.auth.name || (email ? email.split("@")[0] : "");
+
+      const perfisRef = db.collection("perfis").doc(uid);
+      const snap = await perfisRef.get();
+
+      const perfil = snap.exists ?
+        snap.data() :
+        {nome: nomeToken || "", email, telefone: "", cpf: ""};
+
+      if (!snap.exists) {
+        await perfisRef.set({...perfil, criadoEm: new Date().toISOString()}, {merge: true});
+      }
+
+      const endSnap = await perfisRef.collection("enderecos").get();
+      const enderecos = endSnap.docs.map((d) => ({id: d.id, ...d.data()}));
+
+      res.json({success: true, perfil, enderecos});
+    } catch (err) {
+      console.error("GET /me/init:", err);
+      res.status(500).json({success: false, message: "Erro ao carregar perfil."});
+    }
+  });
+
+  // Atualiza perfil (CPF pode ser definido apenas 1x)
+  app.put("/me/profile", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const uid = req.auth.uid;
+      const {nome, telefone, cpf} = req.body || {};
+      const ref = db.collection("perfis").doc(uid);
+      const cur = await ref.get();
+
+      const update = {};
+      if (nome != null) update.nome = String(nome).trim();
+      if (telefone != null) update.telefone = String(telefone).trim();
+
+      if (cpf != null) {
+        const cpfDigits = String(cpf).replace(/\D/g, "");
+        const jaTemCPF = cur.exists && cur.data().cpf;
+        if (!jaTemCPF && cpfDigits) {
+          update.cpf = cpfDigits;
+        }
+      }
+
+      await ref.set(update, {merge: true});
+      const final = (await ref.get()).data();
+      res.json({success: true, perfil: final});
+    } catch (err) {
+      console.error("PUT /me/profile:", err);
+      res.status(500).json({success: false, message: "Erro ao salvar perfil."});
+    }
+  });
+
+  // Lista endereços
+  app.get("/me/addresses", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const uid = req.auth.uid;
+      const ref = db.collection("perfis").doc(uid).collection("enderecos");
+      const snap = await ref.get();
+      res.json({success: true, enderecos: snap.docs.map((d) => ({id: d.id, ...d.data()}))});
+    } catch (err) {
+      console.error("GET /me/addresses:", err);
+      res.status(500).json({success: false, message: "Erro ao listar endereços."});
+    }
+  });
+
+  // Cria endereço (define principal se for o primeiro ou se enviado principal=true)
+  app.post("/me/addresses", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const uid = req.auth.uid;
+      const b = req.body || {};
+
+      const col = db.collection("perfis").doc(uid).collection("enderecos");
+      const snap = await col.get();
+
+      const setPrincipal = snap.empty ? true : !!b.principal;
+
+      const batch = db.batch();
+      if (setPrincipal) {
+        snap.forEach((d) => batch.update(d.ref, {principal: false}));
+      }
+
+      const novoRef = col.doc();
+      batch.set(novoRef, {
+        nomeDestinatario: b.nomeDestinatario,
+        logradouro: b.logradouro,
+        numero: b.numero,
+        complemento: b.complemento || "",
+        bairro: b.bairro,
+        cep: b.cep,
+        cidade: b.cidade,
+        estado: b.estado,
+        telefone: b.telefone,
+        principal: setPrincipal,
+        criadoEm: new Date().toISOString(),
+      });
+
+      await batch.commit();
+      res.json({success: true, id: novoRef.id});
+    } catch (err) {
+      console.error("POST /me/addresses:", err);
+      res.status(500).json({success: false, message: "Erro ao adicionar endereço."});
+    }
+  });
+
+  app.put("/me/addresses/:id", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const uid = req.auth.uid;
+      const id = req.params.id;
+      const b = req.body || {};
+
+      const col = db.collection("perfis").doc(uid).collection("enderecos");
+      const docRef = col.doc(id);
+
+      const update = {};
+      [
+        "nomeDestinatario", "logradouro", "numero", "complemento",
+        "bairro", "cep", "cidade", "estado", "telefone",
+      ].forEach((k) => {
+        if (b[k] != null) update[k] = b[k];
+      });
+
+      if (typeof b.principal === "boolean" && b.principal === true) {
+        const snap = await col.get();
+        const batch = db.batch();
+        snap.forEach((d) => batch.update(d.ref, {principal: false}));
+        batch.update(docRef, {...update, principal: true, atualizadoEm: new Date().toISOString()});
+        await batch.commit();
+      } else {
+        await docRef.set({...update, atualizadoEm: new Date().toISOString()}, {merge: true});
+      }
+
+      res.json({success: true});
+    } catch (err) {
+      console.error("PUT /me/addresses/:id:", err);
+      res.status(500).json({success: false, message: "Erro ao atualizar endereço."});
     }
   });
 

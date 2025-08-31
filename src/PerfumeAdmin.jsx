@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useState} from "react";
+import {storage} from "./firebaseConfig";
+import {ref, uploadBytes, getDownloadURL} from "firebase/storage";
 
 const API = "https://us-central1-uaidecants.cloudfunctions.net/api/perfumes";
 
-export default function PerfumeAdmin({ adminLogado }) {
+export default function PerfumeAdmin({adminLogado}) {
 
   const [perfumes, setPerfumes] = useState([]);
   const [novo, setNovo] = useState({
@@ -17,6 +19,8 @@ export default function PerfumeAdmin({ adminLogado }) {
     pedidos: 0
   });
   const [editando, setEditando] = useState(null);
+  const [modoImagem, setModoImagem] = useState("link"); // 'link' | 'upload'
+  const [arquivo, setArquivo] = useState(null);
 
   useEffect(() => {
     fetch(API)
@@ -24,36 +28,52 @@ export default function PerfumeAdmin({ adminLogado }) {
       .then(data => setPerfumes(Array.isArray(data) ? data : []));
   }, []);
 
-  function criarPerfume(e) {
+  async function criarPerfume(e) {
     e.preventDefault();
     const token = localStorage.getItem("token");
-    fetch(API, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ ...novo, pedidos: 0 })
-    })
-      .then(res => res.json())
-      .then(data => {
-        setPerfumes([...perfumes, data]);
-        setNovo({
-          nome: "",
-          volumeInicial: "",
-          precos2ml: "",
-          precos5ml: "",
-          precos8ml: "",
-          precos15ml: "",
-          urlFragrantica: "",
-          imagem: "",
-          pedidos: 0
+
+    let imagemUrl = (novo.imagem || "").trim();
+    try {
+      if (modoImagem === "upload" && arquivo) {
+        const path = `perfumes/${Date.now()}-${arquivo.name}`;
+        const r = ref(storage, path);
+        await uploadBytes(r, arquivo, {
+          contentType: arquivo.type || "image/jpeg",
+          cacheControl: "public,max-age=31536000,immutable",
         });
-      })
-      .catch(err => {
-        console.error("Erro ao cadastrar perfume:", err);
-        alert("Erro ao cadastrar perfume!");
+        imagemUrl = await getDownloadURL(r);
+      }
+
+      const payload = {...novo, imagem: imagemUrl};
+      const res = await fetch(API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
       });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Erro ao cadastrar");
+
+      setPerfumes([...perfumes, data]);
+      setNovo({
+        nome: "",
+        volumeInicial: "",
+        precos2ml: "",
+        precos5ml: "",
+        precos8ml: "",
+        precos15ml: "",
+        urlFragrantica: "",
+        imagem: "",
+        pedidos: 0,
+      });
+      setArquivo(null);
+      setModoImagem("link");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao cadastrar perfume.");
+    }
   }
 
 
@@ -122,14 +142,45 @@ export default function PerfumeAdmin({ adminLogado }) {
     <div>
       <h4>Cadastrar novo perfume</h4>
       <form onSubmit={criarPerfume} className="mb-4">
+        {/* Campos básicos */}
         <input className="form-control mb-2" placeholder="Nome" value={novo.nome} onChange={e => setNovo({ ...novo, nome: e.target.value })} />
-        <input className="form-control mb-2" placeholder="Volume Inicial" value={novo.volumeInicial} onChange={e => setNovo({ ...novo, volumeInicial: e.target.value })} />
+        <input className="form-control mb-2" placeholder="Volume Inicial (ml)" value={novo.volumeInicial} onChange={e => setNovo({ ...novo, volumeInicial: e.target.value })} />
         <input className="form-control mb-2" placeholder="Preço 2ml" value={novo.precos2ml} onChange={e => setNovo({ ...novo, precos2ml: e.target.value })} />
         <input className="form-control mb-2" placeholder="Preço 5ml" value={novo.precos5ml} onChange={e => setNovo({ ...novo, precos5ml: e.target.value })} />
         <input className="form-control mb-2" placeholder="Preço 8ml" value={novo.precos8ml} onChange={e => setNovo({ ...novo, precos8ml: e.target.value })} />
         <input className="form-control mb-2" placeholder="Preço 15ml" value={novo.precos15ml} onChange={e => setNovo({ ...novo, precos15ml: e.target.value })} />
         <input className="form-control mb-2" placeholder="URL Fragrantica" value={novo.urlFragrantica} onChange={e => setNovo({ ...novo, urlFragrantica: e.target.value })} />
-        <input className="form-control mb-2" placeholder="URL Imagem" value={novo.imagem} onChange={e => setNovo({ ...novo, imagem: e.target.value })} />
+
+        {/* Switch Upload/Link */}
+        <div className="form-check form-switch mb-2">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="switchImagem"
+            checked={modoImagem === "upload"}
+            onChange={() => setModoImagem(modoImagem === "upload" ? "link" : "upload")}
+          />
+          <label className="form-check-label text-white" htmlFor="switchImagem">
+            {modoImagem === "upload" ? "Upload de imagem" : "Usar link de imagem"}
+          </label>
+        </div>
+
+        {modoImagem === "upload" ? (
+          <input
+            type="file"
+            accept="image/*"
+            className="form-control mb-2"
+            onChange={e => setArquivo(e.target.files?.[0] || null)}
+          />
+        ) : (
+          <input
+            className="form-control mb-2"
+            placeholder="URL Imagem"
+            value={novo.imagem}
+            onChange={e => setNovo({ ...novo, imagem: e.target.value })}
+          />
+        )}
+
         <button className="btn btn-success w-100">Cadastrar</button>
       </form>
 
@@ -137,6 +188,7 @@ export default function PerfumeAdmin({ adminLogado }) {
       <table className="table">
         <thead>
           <tr>
+            <th>Miniatura</th>
             <th>Nome</th>
             <th>Volume</th>
             <th>Preços</th>
@@ -147,6 +199,9 @@ export default function PerfumeAdmin({ adminLogado }) {
         <tbody>
           {(Array.isArray(perfumes) ? perfumes : []).map(p => (
             <tr key={p.id}>
+              <td>
+                {p.imagem ? <img src={p.imagem} alt={p.nome} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6 }} /> : "-"}
+              </td>
               <td>
                 {editando && editando.id === p.id ? (
                   <input value={editando.nome} onChange={e => setEditando({ ...editando, nome: e.target.value })} />
@@ -163,7 +218,7 @@ export default function PerfumeAdmin({ adminLogado }) {
                     <input value={editando.precos8ml} onChange={e => setEditando({ ...editando, precos8ml: e.target.value })} placeholder="Preço 8ml" />
                     <input value={editando.precos15ml} onChange={e => setEditando({ ...editando, precos15ml: e.target.value })} placeholder="Preço 15ml" />
                     <input value={editando.urlFragrantica} onChange={e => setEditando({ ...editando, urlFragrantica: e.target.value })} placeholder="URL Fragrantica" />
-                    <input value={editando.imagem} onChange={e => setEditando({ ...editando, imagem: e.target.value })} placeholder="URL Imagem" />
+                    <input value={editando.imagem || ""} onChange={e => setEditando({ ...editando, imagem: e.target.value })} placeholder="URL Imagem" />
                   </>
                 ) : (
                   <>
@@ -171,16 +226,12 @@ export default function PerfumeAdmin({ adminLogado }) {
                     {p.volumeInicial}<br />
                     2ml: {p.precos2ml} | 5ml: {p.precos5ml} | 8ml: {p.precos8ml} | 15ml: {p.precos15ml}<br />
                     Fragrantica: {p.urlFragrantica}<br />
-                    Imagem: {p.imagem}
+                    Imagem: {p.imagem || "-"}
                   </>
                 )}
               </td>
               <td>
-                {p.ativo ? (
-                  <span className="badge bg-success">Ativo</span>
-                ) : (
-                  <span className="badge bg-danger">Inativo</span>
-                )}
+                {p.ativo ? <span className="badge bg-success">Ativo</span> : <span className="badge bg-danger">Inativo</span>}
               </td>
               <td>
                 {editando && editando.id === p.id ? (

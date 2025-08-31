@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom"; // + Link
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { auth } from "./firebaseConfig";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  onAuthStateChanged,               // + persistência
+  setPersistence,
+  browserLocalPersistence,
+} from "firebase/auth";
 import { signOut } from "firebase/auth";
+import { cpf as cpfLib } from "cpf-cnpj-validator"; // + lib de CPF
 
 // Toast visual feedback (Bootstrap, sem CSS extra)
 function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
@@ -270,6 +277,81 @@ function MenuConta({ logado, onLogin, onLogout }) {
   );
 }
 
+// Helpers mínimos de API e CEP (ViaCEP)
+const API_BASE = "https://us-central1-uaidecants.cloudfunctions.net/api";
+
+async function api(path, init = {}) {
+  const user = auth.currentUser;
+  const token = user ? await user.getIdToken() : localStorage.getItem("token");
+  const headers = { "Content-Type": "application/json", ...(init.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(`${API_BASE}${path}`, { ...init, headers });
+}
+
+async function buscarCEP(cep) {
+  const digits = (cep || "").replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  const resp = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+  const data = await resp.json();
+  if (data.erro) return null;
+  return {
+    logradouro: data.logradouro || "",
+    bairro: data.bairro || "",
+    cidade: data.localidade || "",
+    estado: data.uf || "",
+  };
+}
+
+function onlyDigits(s) {
+  return String(s || "").replace(/\D/g, "");
+}
+function maskCPF(v) {
+  const d = onlyDigits(v).slice(0, 11);
+  const p1 = d.slice(0, 3), p2 = d.slice(3, 6), p3 = d.slice(6, 9), p4 = d.slice(9, 11);
+  return [p1, p2 && `.${p2}`, p3 && `.${p3}`, p4 && `-${p4}`].filter(Boolean).join("");
+}
+
+// Breadcrumb label para cada painel do usuário
+function breadcrumbLabel(key) {
+  switch (key) {
+    case "criar": return "Você está em: /Usuário/Criar Conta";
+    case "login": return "Você está em: /Usuário/Iniciar Sessão";
+    case "dados": return "Você está em: /Usuário/Meus Dados";
+    case "enderecos": return "Você está em: /Usuário/Meus Endereços";
+    case "convidado": return "Você está em: /Checkout/Convidado";
+    default: return "";
+  }
+}
+
+// Box reutilizável com header + botão X
+function NavBox({ title, breadcrumb, onClose, maxWidth = 680, children }) {
+  return (
+    <div className="container mx-auto" style={{ maxWidth }}>
+      {breadcrumb && (
+        <div className="mb-2 small text-gold">{breadcrumb}</div>
+      )}
+      <div className="card shadow-sm navbox">
+        <div className="card-header d-flex align-items-center justify-content-center">
+          <h5 className="mb-0">{title}</h5>
+        </div>
+
+        {/* Botão X dourado fixo no canto do box */}
+        <button
+          type="button"
+          className="btn btn-gold btn-close-gold"
+          aria-label="Fechar"
+          onClick={onClose}
+          title="Fechar"
+        >
+          ×
+        </button>
+
+        <div className="card-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [ordem, setOrdem] = useState(() => localStorage.getItem("ordem") || "alfabetica");
   const [pagina, setPagina] = useState(() => Number(localStorage.getItem("pagina")) || 1);
@@ -291,10 +373,44 @@ export default function App() {
   const [contaMenu, setContaMenu] = useState(""); // controla qual tela do menu conta
   const [usuarioLogado, setUsuarioLogado] = useState(false); // controle login
 
+  // Estado de perfil e endereços
+  const [perfil, setPerfil] = useState(null);
+  const [enderecos, setEnderecos] = useState([]);
+  const [carregandoPerfil, setCarregandoPerfil] = useState(false);
+
+  // NOVO: controla máscara do CPF no formulário
+  const [cpfInput, setCpfInput] = useState("");
+
   // Toast state
   const [toast, setToast] = useState({ mensagem: "", tipo: "info" });
   const [toastCadastro, setToastCadastro] = useState({ mensagem: "", tipo: "info" });
   const [toastCarrinho, setToastCarrinho] = useState({ mensagem: "", tipo: "info" });
+
+  // total de itens no carrinho para o badge
+  const totalItens = carrinho.reduce((acc, item) => acc + (item.quantidade || 1), 0);
+
+  // Persistência do login e restauração do perfil ao abrir/voltar ao início
+  useEffect(() => {
+    // garante persistência em localStorage
+    setPersistence(auth, browserLocalPersistence).catch(() => {});
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user && user.emailVerified) {
+        setUsuarioLogado(true);
+        // opcional: guarda/atualiza token para chamadas à API
+        try {
+          const t = await user.getIdToken();
+          localStorage.setItem("token", t);
+        } catch {}
+        await carregarPerfilEEnderecos();
+      } else {
+        setUsuarioLogado(false);
+        setPerfil(null);
+        setEnderecos([]);
+        localStorage.removeItem("token");
+      }
+    });
+    return () => unsub();
+  }, []);
 
   async function checarAdminLogado() {
     const token = localStorage.getItem("token");
@@ -324,7 +440,6 @@ export default function App() {
     setToastCarrinho({ mensagem, tipo });
     setTimeout(() => setToastCarrinho({ mensagem: "", tipo }), 3500);
   }
-
 
   useEffect(() => {
     localStorage.setItem("carrinho", JSON.stringify(carrinho));
@@ -444,7 +559,35 @@ export default function App() {
     mostrarToastCarrinho("Item removido do carrinho.", "info");
   }
 
-  const totalItens = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
+  async function carregarPerfilEEnderecos() {
+    try {
+      setCarregandoPerfil(true);
+      const res = await api("/me/init");
+      const json = await res.json();
+      if (json.success) {
+        setPerfil(json.perfil || null);
+        setEnderecos(Array.isArray(json.enderecos) ? json.enderecos : []);
+        // aplica máscara inicial do CPF vindo do backend (se houver)
+        setCpfInput(maskCPF(json.perfil?.cpf || ""));
+      }
+    } finally {
+      setCarregandoPerfil(false);
+    }
+  }
+
+  // Logout do cliente (sem backend)
+  async function handleLogoutUser() {
+    try {
+      await signOut(auth); // encerra a sessão no dispositivo
+    } finally {
+      localStorage.removeItem("token"); // evita reaproveitar token nas requisições
+      setUsuarioLogado(false);
+      setPerfil(null);
+      setEnderecos([]);
+      setContaMenu("");
+      mostrarToast("Logout realizado.", "info");
+    }
+  }
 
   return (
     <BrowserRouter>
@@ -457,9 +600,11 @@ export default function App() {
           onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
         />
         <nav className="navbar mb-4">
-          <a href="/">
+          {/* Usa Link para evitar reload da página (não perde estado/login) */}
+          <Link to="/">
             <img src="/images/Logo.png" alt="Uai Decants" className="navbar-logo" />
-          </a>
+          </Link>
+
           <div className="navbar-search">
             <input
               type="text"
@@ -509,123 +654,203 @@ export default function App() {
             <span style={{ fontSize: "22px" }}>🛒</span> Carrinho
             <span className="badge navbar-badge">{totalItens}</span>
           </button>
+
           <MenuConta
             logado={usuarioLogado}
-            onLogin={tipo => setContaMenu(tipo)}
-            onLogout={() => {
-              setUsuarioLogado(false);
-              setContaMenu("");
-              mostrarToast("Logout realizado.", "info");
-            }}
+            onLogin={(tipo) => setContaMenu(tipo)}
+            onLogout={handleLogoutUser}     // usa logout real do Firebase
           />
         </nav>
 
         {/* Renderização das telas do menu conta */}
         {contaMenu === "criar" && (
-          <div className="container" style={{ maxWidth: 400 }}>
-            {/* Toast aparece dentro do container de cadastro */}
+          <NavBox
+            title="Criar Conta"
+            breadcrumb={breadcrumbLabel("criar")}
+            onClose={() => setContaMenu("")}
+            maxWidth={560}
+          >
             <ToastBootstrap
               mensagem={toastCadastro.mensagem}
               tipo={toastCadastro.tipo}
               show={!!toastCadastro.mensagem}
               onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
             />
-            <div className="card p-4 ">
-              <h4 style={{ textAlign: "center", color: "black" }}>Criar Conta</h4>
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                const nome = e.target.nome.value;
+                const email = e.target.email.value;
+                const senha = e.target.senha.value;
+                try {
+                  const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/usuarios", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ nome, email, senha })
+                  });
+                  const data = await resp.json();
+                  if (data.success) {
+                    mostrarToastCadastro("Conta criada com sucesso!", "success");
+                    setContaMenu("login");
+                  } else {
+                    mostrarToastCadastro(data.message || "Erro ao criar conta.", "error");
+                  }
+                } catch {
+                  mostrarToastCadastro("Erro de conexão.", "error");
+                }
+              }}
+            >
+              <div className="mb-2">
+                <label className="form-label">Nome</label>
+                <input type="text" name="nome" className="form-control" required />
+              </div>
+              <div className="mb-2">
+                <label className="form-label">Email</label>
+                <input type="email" name="email" className="form-control" required />
+              </div>
+              <div className="mb-2">
+                <label className="form-label">Senha</label>
+                <input type="password" name="senha" className="form-control" required minLength={6} />
+              </div>
+              <button type="submit" className="btn btn-success w-100">Criar Conta</button>
+            </form>
+          </NavBox>
+        )}
+
+        {/* PAINEL: Login */}
+        {contaMenu === "login" && (
+          <NavBox
+            title="Iniciar Sessão"
+            breadcrumb={breadcrumbLabel("login")}
+            onClose={() => setContaMenu("")}
+            maxWidth={560}
+          >
+            <ToastBootstrap
+              mensagem={toastCadastro.mensagem}
+              tipo={toastCadastro.tipo}
+              show={!!toastCadastro.mensagem}
+              onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+            />
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                const email = e.target.email.value;
+                const senha = e.target.senha.value;
+                try {
+                  const cred = await signInWithEmailAndPassword(auth, email, senha);
+                  const user = cred.user;
+                  if (!user.emailVerified) {
+                    try { await sendEmailVerification(user); } catch {}
+                    mostrarToastCadastro("Verifique seu e-mail. Reenviei o link de verificação.", "warning");
+                    await signOut(auth);
+                    return;
+                  }
+                  const token = await user.getIdToken();
+                  localStorage.setItem("token", token);
+                  setUsuarioLogado(true);
+                  await carregarPerfilEEnderecos();
+                  setContaMenu("dados");
+                  mostrarToast("Login realizado com sucesso!", "success");
+                } catch {
+                  mostrarToastCadastro("Usuário não encontrado ou senha incorreta.", "error");
+                }
+              }}
+            >
+              <div className="mb-2">
+                <label className="form-label">Email</label>
+                <input type="email" name="email" className="form-control" required />
+              </div>
+              <div className="mb-2">
+                <label className="form-label">Senha</label>
+                <input type="password" name="senha" className="form-control" required />
+              </div>
+              <button type="submit" className="btn btn-primary w-100">Entrar</button>
+            </form>
+          </NavBox>
+        )}
+
+        {/* PAINEL: Meus Dados */}
+        {contaMenu === "dados" && (
+          <NavBox
+            title="Meus Dados"
+            breadcrumb={breadcrumbLabel("dados")}
+            onClose={() => setContaMenu("")}
+            maxWidth={680}
+          >
+            {carregandoPerfil && <div>Carregando…</div>}
+            {!!perfil && (
               <form
-                onSubmit={async e => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  const nome = e.target.nome.value;
-                  const email = e.target.email.value;
-                  const senha = e.target.senha.value;
-                  try {
-                    const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/usuarios", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ nome, email, senha })
-                    });
-                    const data = await resp.json();
-                    if (data.success) {
-                      mostrarToastCadastro("Conta criada com sucesso!", "success");
-                      setContaMenu("login");
-                    } else {
-                      mostrarToastCadastro(data.message || "Erro ao criar conta.", "error");
+                  const form = new FormData(e.currentTarget);
+                  const payload = { nome: form.get("nome"), telefone: form.get("telefone") };
+                  const cpfDigits = onlyDigits(cpfInput);
+                  if (!perfil.cpf && cpfDigits) {
+                    if (!cpfLib.isValid(cpfDigits)) {
+                      mostrarToast("CPF inválido. Verifique os dígitos.", "error");
+                      return;
                     }
-                  } catch {
-                    mostrarToastCadastro("Erro de conexão.", "error");
+                    payload.cpf = cpfDigits;
+                  }
+                  const res = await api("/me/profile", { method: "PUT", body: JSON.stringify(payload) });
+                  const json = await res.json();
+                  if (json.success) {
+                    setPerfil(json.perfil);
+                    setCpfInput(maskCPF(json.perfil?.cpf || cpfDigits));
+                    mostrarToast("Dados salvos.", "success");
+                  } else {
+                    mostrarToast("Erro ao salvar.", "error");
                   }
                 }}
               >
                 <div className="mb-2">
                   <label className="form-label">Nome</label>
-                  <input type="text" name="nome" className="form-control" required />
+                  <input name="nome" className="form-control bg-white text-dark" defaultValue={perfil.nome || ""} required />
                 </div>
                 <div className="mb-2">
                   <label className="form-label">Email</label>
-                  <input type="email" name="email" className="form-control" required />
+                  <input className="form-control bg-white text-dark" value={perfil.email || auth.currentUser?.email || ""} disabled />
                 </div>
                 <div className="mb-2">
-                  <label className="form-label">Senha</label>
-                  <input type="password" name="senha" className="form-control" required minLength={6} />
+                  <label className="form-label">Telefone (WhatsApp)</label>
+                  <input name="telefone" className="form-control bg-white text-dark" defaultValue={perfil.telefone || ""} placeholder="(DDD) 99999-9999" />
                 </div>
-                <button type="submit" className="btn btn-success w-100">Criar Conta</button>
+                <div className="mb-3">
+                  <label className="form-label">CPF</label>
+                  <input
+                    name="cpf"
+                    className="form-control bg-white text-dark"
+                    value={cpfInput}
+                    onChange={(e) => setCpfInput(maskCPF(e.target.value))}
+                    placeholder="000.000.000-00"
+                    disabled={!!perfil.cpf}
+                  />
+                  {!perfil.cpf && onlyDigits(cpfInput).length === 11 && !cpfLib.isValid(onlyDigits(cpfInput)) && (
+                    <small className="text-danger">CPF inválido.</small>
+                  )}
+                  {!perfil.cpf && <small className="text-muted d-block">O Campo CPF Não poderá ser editado depois de cadastrado!</small>}
+                </div>
+                <button className="btn btn-success">Salvar</button>
               </form>
-            </div>
-          </div>
+            )}
+          </NavBox>
         )}
-        {contaMenu === "login" && (
-          <div className="container" style={{ maxWidth: 400 }}>
-            <ToastBootstrap
-              mensagem={toastCadastro.mensagem}
-              tipo={toastCadastro.tipo}
-              show={!!toastCadastro.mensagem}
-              onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+
+        {/* PAINEL: Meus Endereços */}
+        {contaMenu === "enderecos" && (
+          <NavBox
+            title="Meus Endereços"
+            breadcrumb={breadcrumbLabel("enderecos")}
+            onClose={() => setContaMenu("")}
+            maxWidth={820}
+          >
+            <EnderecosUI
+              perfil={perfil}
+              enderecos={enderecos}
+              onReload={async () => { await carregarPerfilEEnderecos(); }}
             />
-            <div className="card p-4">
-              <h4 style={{ textAlign: "center", color: "black" }}>Iniciar Sessão</h4>
-              <form
-                onSubmit={async e => {
-                  e.preventDefault();
-                  const email = e.target.email.value;
-                  const senha = e.target.senha.value;
-
-                  try {
-                    const userCredential = await signInWithEmailAndPassword(auth, email, senha);
-                    const user = userCredential.user;
-
-                    if (!user.emailVerified) {
-                      mostrarToastCadastro("Verifique seu e-mail antes de acessar.", "error");
-                      await auth.signOut();
-                      return;
-                    }
-
-                    const token = await user.getIdToken();
-                    localStorage.setItem("token", token);
-                    setUsuarioLogado(true);
-                    setContaMenu("");
-                    mostrarToast("Login realizado com sucesso!", "success");
-                  } catch (err) {
-                    mostrarToastCadastro("Usuário não encontrado ou senha incorreta.", "error");
-                  }
-                }}
-              >
-                <div className="mb-2">
-                  <label className="form-label">Email</label>
-                  <input type="email" name="email" className="form-control" required />
-                </div>
-                <div className="mb-2">
-                  <label className="form-label">Senha</label>
-                  <input type="password" name="senha" className="form-control" required />
-                </div>
-                <button type="submit" className="btn btn-primary w-100">Entrar</button>
-              </form>
-            </div>
-          </div>
+          </NavBox>
         )}
-        {contaMenu === "convidado" && <div className="container"><h4>Checkout como Convidado</h4>{/* Checkout simples aqui */}</div>}
-        {contaMenu === "dados" && <div className="container"><h4>Meus Dados</h4>{/* Dados do usuário aqui */}</div>}
-        {contaMenu === "enderecos" && <div className="container"><h4>Endereços</h4>{/* Endereços do usuário aqui */}</div>}
-        {contaMenu === "pedidos" && <div className="container"><h4>Meus Pedidos</h4>{/* Pedidos do usuário aqui */}</div>}
 
         <Routes>
           <Route
@@ -817,5 +1042,192 @@ export default function App() {
         />
       </div>
     </BrowserRouter>
+  );
+}
+
+// -------- Endereços: inputs com fundo branco --------
+function EnderecosUI({ perfil, enderecos, onReload }) {
+  const [adicionando, setAdicionando] = useState(false);
+  const [editando, setEditando] = useState(null); // id do endereço em edição
+  const base = {
+    nomeDestinatario: perfil?.nome || "",
+    telefone: perfil?.telefone || "",
+    logradouro: "", numero: "", complemento: "",
+    bairro: "", cep: "", cidade: "", estado: "",
+    principal: false,
+  };
+  const [form, setForm] = useState(base);
+  const [formEdit, setFormEdit] = useState(null);
+
+  useEffect(() => {
+    setForm((f) => ({ ...f, nomeDestinatario: perfil?.nome || "", telefone: perfil?.telefone || "" }));
+  }, [perfil]);
+
+  async function preencherPorCEP(cep, setter) {
+    const dados = await buscarCEP(cep || "");
+    if (dados) {
+      setter((s) => ({ ...s, cep, logradouro: dados.logradouro, bairro: dados.bairro, cidade: dados.cidade, estado: dados.estado }));
+    }
+  }
+
+  async function salvarNovo() {
+    const res = await api("/me/addresses", { method: "POST", body: JSON.stringify(form) });
+    const json = await res.json();
+    if (json.success) {
+      setAdicionando(false);
+      setForm(base);
+      await onReload();
+    }
+  }
+
+  async function salvarEdicao(id) {
+    const res = await api(`/me/addresses/${id}`, { method: "PUT", body: JSON.stringify(formEdit) });
+    const json = await res.json();
+    if (json.success) {
+      setEditando(null);
+      setFormEdit(null);
+      await onReload();
+    }
+  }
+
+  const principal = enderecos.find((e) => e.principal);
+  const complemento = enderecos.find((e) => !e.principal);
+
+  const CardEndereco = ({ e }) => (
+    <div className="card p-3 mb-3">
+      <div className="d-flex justify-content-between">
+        <strong>{e.principal ? "Endereço Principal" : "Endereço Complementar"}</strong>
+        <button className="btn btn-sm btn-outline-primary" onClick={() => {
+          if (editando === e.id) { setEditando(null); setFormEdit(null); } else { setEditando(e.id); setFormEdit({ ...e }); }
+        }}>
+          {editando === e.id ? "Cancelar" : "Editar"}
+        </button>
+      </div>
+      {editando === e.id ? (
+        <div className="mt-2">
+          <div className="row g-2">
+            <div className="col-md-6">
+              <label className="form-label">Nome do destinatário</label>
+              <input className="form-control bg-white text-dark" value={formEdit.nomeDestinatario || ""} onChange={ev => setFormEdit({ ...formEdit, nomeDestinatario: ev.target.value })} />
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">Telefone</label>
+              <input className="form-control bg-white text-dark" value={formEdit.telefone || ""} onChange={ev => setFormEdit({ ...formEdit, telefone: ev.target.value })} />
+            </div>
+            <div className="col-5">
+              <label className="form-label">CEP</label>
+              <input
+                className="form-control bg-white text-dark"
+                value={formEdit.cep || ""}
+                onChange={ev => setFormEdit({ ...formEdit, cep: ev.target.value })}
+                onBlur={() => preencherPorCEP(formEdit.cep, setFormEdit)}
+              />
+            </div>
+            <div className="col-7">
+              <label className="form-label">Rua (Logradouro)</label>
+              <input className="form-control bg-white text-dark" value={formEdit.logradouro || ""} onChange={ev => setFormEdit({ ...formEdit, logradouro: ev.target.value })} />
+            </div>
+            <div className="col-3">
+              <label className="form-label">Número</label>
+              <input className="form-control bg-white text-dark" value={formEdit.numero || ""} onChange={ev => setFormEdit({ ...formEdit, numero: ev.target.value })} />
+            </div>
+            <div className="col-4">
+              <label className="form-label">Complemento</label>
+              <input className="form-control bg-white text-dark" value={formEdit.complemento || ""} onChange={ev => setFormEdit({ ...formEdit, complemento: ev.target.value })} />
+            </div>
+            <div className="col-5">
+              <label className="form-label">Bairro</label>
+              <input className="form-control bg-white text-dark" value={formEdit.bairro || ""} onChange={ev => setFormEdit({ ...formEdit, bairro: ev.target.value })} />
+            </div>
+            <div className="col-6">
+              <label className="form-label">Cidade</label>
+              <input className="form-control bg-white text-dark" value={formEdit.cidade || ""} onChange={ev => setFormEdit({ ...formEdit, cidade: ev.target.value })} />
+            </div>
+            <div className="col-6">
+              <label className="form-label">Estado</label>
+              <input className="form-control bg-white text-dark" value={formEdit.estado || ""} onChange={ev => setFormEdit({ ...formEdit, estado: ev.target.value })} />
+            </div>
+            <div className="col-12 form-check mt-2">
+              <input id={`principal-${e.id}`} className="form-check-input" type="checkbox" checked={!!formEdit.principal} onChange={ev => setFormEdit({ ...formEdit, principal: ev.target.checked })} />
+              <label className="form-check-label" htmlFor={`principal-${e.id}`}>Definir como principal</label>
+            </div>
+          </div>
+          <button className="btn btn-success mt-3" onClick={() => salvarEdicao(e.id)}>Salvar edição</button>
+        </div>
+      ) : (
+        <div className="mt-2">
+          <div>{e.nomeDestinatario} — {e.telefone}</div>
+          <div>{e.logradouro}, {e.numero} {e.complemento ? `- ${e.complemento}` : ""}</div>
+          <div>{e.bairro} — {e.cidade}/{e.estado} • CEP {e.cep}</div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="container" style={{ maxWidth: 820 }}>
+      <h4>Meus Endereços</h4>
+      {principal ? <CardEndereco e={principal} /> : <div className="mb-3">Nenhum endereço principal cadastrado.</div>}
+      {complemento ? <CardEndereco e={complemento} /> : null}
+
+      {!adicionando ? (
+        <button className="btn btn-outline-success" onClick={() => setAdicionando(true)}>+ Adicionar Endereço</button>
+      ) : (
+        <div className="card p-3 mt-3">
+          <strong>Novo Endereço</strong>
+          <div className="row g-2 mt-1">
+            <div className="col-md-6">
+              <label className="form-label">Nome do destinatário</label>
+              <input className="form-control bg-white text-dark" value={form.nomeDestinatario} onChange={e => setForm({ ...form, nomeDestinatario: e.target.value })} />
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">Telefone</label>
+              <input className="form-control bg-white text-dark" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} />
+            </div>
+            <div className="col-5">
+              <label className="form-label">CEP</label>
+              <input
+                className="form-control bg-white text-dark"
+                value={form.cep}
+                onChange={e => setForm({ ...form, cep: e.target.value })}
+                onBlur={() => preencherPorCEP(form.cep, setForm)}
+              />
+            </div>
+            <div className="col-7">
+              <label className="form-label">Rua (Logradouro)</label>
+              <input className="form-control bg-white text-dark" value={form.logradouro} onChange={e => setForm({ ...form, logradouro: e.target.value })} />
+            </div>
+            <div className="col-3">
+              <label className="form-label">Número</label>
+              <input className="form-control bg-white text-dark" value={form.numero} onChange={e => setForm({ ...form, numero: e.target.value })} />
+            </div>
+            <div className="col-4">
+              <label className="form-label">Complemento</label>
+              <input className="form-control bg-white text-dark" value={form.complemento} onChange={e => setForm({ ...form, complemento: e.target.value })} />
+            </div>
+            <div className="col-5">
+              <label className="form-label">Bairro</label>
+              <input className="form-control bg-white text-dark" value={form.bairro} onChange={e => setForm({ ...form, bairro: e.target.value })} />
+            </div>
+            <div className="col-6">
+              <label className="form-label">Cidade</label>
+              <input className="form-control bg-white text-dark" value={form.cidade} onChange={e => setForm({ ...form, cidade: e.target.value })} />
+            </div>
+            <div className="col-6">
+              <label className="form-label">Estado</label>
+              <input className="form-control bg-white text-dark" value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} />
+            </div>
+            <div className="col-12 form-check mt-2">
+              <input id="novo-principal" className="form-check-input" type="checkbox" checked={form.principal} onChange={e => setForm({ ...form, principal: e.target.checked })} />
+              <label className="form-check-label" htmlFor="novo-principal">Definir como principal</label>
+            </div>
+          </div>
+          <div className="mt-3 d-flex gap-2">
+            <button className="btn btn-success" onClick={salvarNovo}>Salvar endereço</button>
+            <button className="btn btn-secondary" onClick={() => { setAdicionando(false); setForm(base); }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
