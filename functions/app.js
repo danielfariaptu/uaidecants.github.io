@@ -13,19 +13,149 @@ function createApp() {
     }
   }
 
+  // Mailer em cache (pool) — evita handshake em cada requisição
+  let mailer;
+  function getMailer() {
+    if (!mailer) {
+      const nodemailer = require("nodemailer");
+      mailer = nodemailer.createTransport({
+        service: "gmail",
+        pool: true,
+        maxConnections: 1,
+        maxMessages: 100,
+        auth: {user: process.env.EMAIL_REMETENTE, pass: process.env.ARROZ},
+        // evita travas do SMTP
+        connectionTimeout: 10000,
+        socketTimeout: 10000,
+        greetingTimeout: 8000,
+      });
+    }
+    return mailer;
+  }
+
+  // Templates HTML
+  function buildVerifyEmailHtml(nome, customLink) {
+    return `<!doctype html>
+<html lang="pt-BR">
+  <body style="margin:0;padding:0;background:#f5f7fb;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      Confirme seu e-mail para ativar sua conta Uai Decants.
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f7fb;">
+      <tr><td align="center" style="padding:24px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td align="left" style="background:#f9c417;padding:16px 24px;">
+              <img src="https://drive.google.com/uc?export=view&id=1NzJS7rqZxgDZKOUXa-GPS9OwKWJUF6bh"
+                   width="140" height="140" alt="Uai Decants"
+                   style="display:block;border:0;outline:none;text-decoration:none;border-radius:10px;">
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:12px 28px 0 28px;">
+              <h1 style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#0d6efd;">
+                Confirme seu e‑mail
+              </h1>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:12px 28px 0 28px;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#4a5568;">
+                Olá, <strong>${nome || ""}</strong>! Clique no botão para ativar sua conta.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:22px 28px 24px 28px;">
+              <a href="${customLink}" target="_blank"
+                 style="display:inline-block;background:#27ae60;color:#ffffff;text-decoration:none;
+                        font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;
+                        padding:12px 28px;border-radius:8px;">
+                Confirmar e‑mail
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:0 28px 24px 28px;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#718096;">
+                Se você não criou esta conta, ignore este e‑mail.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+  }
+
+  function buildResetHtml(customLink) {
+    return `<!doctype html>
+<html lang="pt-BR">
+  <body style="margin:0;padding:0;background:#f5f7fb;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      Redefinir senha da sua conta Uai Decants.
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f7fb;">
+      <tr><td align="center" style="padding:24px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td align="left" style="background:#f9c417;padding:16px 24px;">
+              <img src="https://drive.google.com/uc?export=view&id=1NzJS7rqZxgDZKOUXa-GPS9OwKWJUF6bh"
+                   width="140" height="140" alt="Uai Decants"
+                   style="display:block;border:0;outline:none;text-decoration:none;border-radius:10px;">
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:12px 28px 0 28px;">
+              <h1 style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#0d6efd;">
+                Redefinir senha
+              </h1>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:12px 28px 0 28px;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#4a5568;">
+                Para criar uma nova senha, clique no botão abaixo:
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:22px 28px 24px 28px;">
+              <a href="${customLink}" target="_blank"
+                 style="display:inline-block;background:#0d6efd;color:#ffffff;text-decoration:none;
+                        font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;
+                        padding:12px 28px;border-radius:8px;">
+                Criar nova senha
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:0 28px 24px 28px;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#718096;">
+                Se você não solicitou, ignore este e‑mail.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+  }
+
   const ADMINS = ["danielfari4@gmail.com"];
   const EMAILS_TEMPORARIOS = [
     "tempmail.com", "10minutemail.com", "mailinator.com", "guerrillamail.com",
     "yopmail.com", "getnada.com", "trashmail.com", "fakeinbox.com", "mintemail.com", "dispostable.com",
   ];
-
   const UFS_SET = new Set(["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]);
 
   function isNonEmpty(v) {
-    return typeof v === "string" && v.trim() !== "";
+    return typeof v==="string" && v.trim()!=="";
   }
   function digits(v) {
-    return String(v || "").replace(/\D/g, "");
+    return String(v||"").replace(/\D/g, "");
   }
 
   function validateAddressPayload(obj) {
@@ -88,6 +218,7 @@ function createApp() {
   }
 
   const app = express();
+  app.disable("x-powered-by"); // remove header e micro overhead
 
   app.use(cors({
     origin: [
@@ -99,7 +230,6 @@ function createApp() {
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }));
-
   // Inicializa Admin na primeira requisição atendida
   app.use((req, _res, next) => {
     ensureInit(); next();
@@ -107,228 +237,116 @@ function createApp() {
 
   app.use(express.json({limit: "2mb"}));
 
-  app.get("/", (_req, res) => res.send("API Uai Decants rodando com Firebase!"));
-  app.post("/logout-admin", (_req, res) => res.json({success: true}));
+  app.get("/", (_req, res)=>res.send("API Uai Decants rodando com Firebase!"));
+  app.post("/logout-admin", (_req, res)=>res.json({success: true}));
 
+  // CRIAR CONTA — rápido, sem bcrypt/queries extras; e-mail em background
   app.post("/usuarios", async (req, res) => {
     try {
-      const {nome, email, senha} = req.body;
-      if (!nome || !email || !senha) return res.status(400).json({success: false, message: "Nome, email e senha são obrigatórios."});
-
-      const snapshot = await db.collection("usuarios").where("email", "==", email).get();
-      if (!snapshot.empty) return res.status(409).json({success: false, message: "Email já cadastrado."});
-
-      if (isEmailTemporario(email)) return res.status(400).json({success: false, message: "Não é permitido usar e-mails temporários."});
-
-      try {
-        await admin.auth().createUser({email, password: senha, displayName: nome});
-      } catch (error) {
-        console.error("Erro ao criar usuário no Firebase Auth:", error);
-        return res.status(400).json({success: false, message: error.message});
+      const {nome, email, senha} = req.body || {};
+      if (!nome || !email || !senha) {
+        return res.status(400).json({success: false, message: "Nome, email e senha são obrigatórios."});
+      }
+      if (String(senha).length < 8) {
+        return res.status(400).json({success: false, message: "Senha deve ter ao menos 8 caracteres."});
+      }
+      if (isEmailTemporario(email)) {
+        return res.status(400).json({success: false, message: "Não é permitido usar e-mails temporários."});
       }
 
-      // BASE: usa o origin da requisição quando válido, senão domínio de produção
+      let userRec;
+      try {
+        userRec = await admin.auth().createUser({email, password: senha, displayName: nome});
+      } catch (error) {
+        if (error && error.code === "auth/email-already-exists") {
+          return res.status(409).json({success: false, message: "Email já cadastrado."});
+        }
+        console.error("createUser error:", error);
+        return res.status(400).json({success: false, message: "Não foi possível criar a conta."});
+      }
+
       const origin = (req.headers.origin && /^https?:\/\//.test(req.headers.origin)) ?
         req.headers.origin :
         "https://www.uaidecants.com.br";
       const baseUrl = `${origin}/confirmar-email`;
 
-      // Gera link oficial e extrai o oobCode para montar a URL da sua página
-      const verifySettings = {url: baseUrl, handleCodeInApp: true};
-      const verifyLink = await admin.auth().generateEmailVerificationLink(email, verifySettings);
+      const settings = {url: baseUrl, handleCodeInApp: true};
+      const verifyLink = await admin.auth().generateEmailVerificationLink(email, settings);
       const u = new URL(verifyLink);
       const oobCode = u.searchParams.get("oobCode");
       const customLink = `${baseUrl}?mode=verifyEmail&oobCode=${encodeURIComponent(oobCode)}&lang=pt&hl=pt-BR`;
 
-      const nodemailer = require("nodemailer");
-      const bcrypt = require("bcryptjs");
+      // AGUARDA só este write (garante persistência do perfil)
+      await db.collection("perfis").doc(userRec.uid).set(
+          {nome, email, telefone: "", cpf: "", criadoEm: new Date().toISOString()},
+          {merge: true},
+      );
 
-      const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {user: process.env.EMAIL_REMETENTE, pass: process.env.ARROZ},
-      });
+      // REMOVIDO: write extra em "usuarios" (era redundante e não aguardado)
+      // db.collection("usuarios").add({ uid: userRec.uid, nome, email, ... });
 
-      // Template “bulletproof” (uma tabela, sem margins, com preheader)
-      const html = `<!doctype html>
-<html lang="pt-BR">
-  <body style="margin:0;padding:0;background:#f5f7fb;">
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      Confirme seu e-mail para ativar sua conta Uai Decants.
-    </div>
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f5f7fb;">
-      <tr>
-        <td align="center" style="padding:24px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:12px;">
-            <tr>
-              <td align="center" style="padding:28px 28px 8px 28px;">
-                <img src="https://drive.google.com/uc?export=view&id=1NzJS7rqZxgDZKOUXa-GPS9OwKWJUF6bh" alt="Uai Decants" width="120" height="120" style="display:block;border:0;outline:none;text-decoration:none;border-radius:8px;">
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:0 28px;">
-                <h1 style="margin:8px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#0d6efd;">Confirme seu e-mail</h1>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 28px 0 28px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#4a5568;">
-                  Olá, <strong>${nome}</strong>! Clique no botão para ativar sua conta.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:22px 28px;">
-                <a href="${customLink}" target="_blank"
-                   style="display:inline-block;background:#27ae60;color:#ffffff;text-decoration:none;
-                          font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;
-                          padding:12px 28px;border-radius:8px;">
-                  Confirmar e-mail
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:0 28px 6px 28px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#718096;">
-                  Se você não criou esta conta, ignore este e-mail.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:16px 0 0 0;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                  <tr><td height="1" style="background:#edf2f7;"></td></tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 16px 24px 16px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#a0aec0;">
-                  Dúvidas? <a href="mailto:suporte@uaidecants.com.br" style="color:#4a5568;text-decoration:underline;">suporte@uaidecants.com.br</a> • WhatsApp: (38) 99724-8602
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-
-      await transporter.sendMail({
-        from: "\"Uai Decants\" <suporte@uaidecants.com.br>",
+      // E-mail em background (não bloqueia resposta)
+      const transporter = getMailer();
+      const html = buildVerifyEmailHtml(nome, customLink);
+      transporter.sendMail({
+        from: `"Uai Decants" <suporte@uaidecants.com.br>`,
         to: email,
         subject: "Confirme seu e-mail - Uai Decants",
         html,
         text: `Ative sua conta: ${customLink}`,
+      }).catch((e) => console.error("sendMail verify error:", e));
+
+      return res.json({
+        success: true,
+        uid: userRec.uid,
+        nome,
+        email,
+        message: "Conta criada! Enviamos um e-mail para confirmação.",
       });
-
-      const hash = await bcrypt.hash(senha, 10);
-      const usuario = {nome, email, senha: hash, criadoEm: new Date().toISOString(), emailVerificado: false};
-      const docRef = await db.collection("usuarios").add(usuario);
-
-      res.json({success: true, id: docRef.id, nome, email, message: "Conta criada! Verifique seu e-mail antes de acessar."});
     } catch (err) {
       console.error("Erro /usuarios:", err);
-      res.status(400).json({success: false, message: "Erro ao criar conta."});
+      return res.status(400).json({success: false, message: "Erro ao criar conta."});
     }
   });
 
+  // Reenvio verificação (usa mailer em cache)
   app.post("/auth/resend-verification", async (req, res) => {
     try {
       ensureInit();
       const {email, nome, redirectUrl} = req.body || {};
       if (!email) return res.status(400).json({success: false, message: "Email é obrigatório."});
 
-      let exists = true;
+      const baseUrl = String(redirectUrl || "https://www.uaidecants.com.br/confirmar-email");
+      const settings = {url: baseUrl, handleCodeInApp: true};
+
+      let customLink = null;
       try {
-        await admin.auth().getUserByEmail(String(email).trim());
-      } catch (err) { // <-- antes era: catch {
-        exists = false;
-      }
-
-      if (exists) {
-        const baseUrl = String(redirectUrl || "https://www.uaidecants.com.br/confirmar-email");
-        const settings = {url: baseUrl, handleCodeInApp: true};
         const link = await admin.auth().generateEmailVerificationLink(String(email).trim(), settings);
-
         const u = new URL(link);
         const oobCode = u.searchParams.get("oobCode");
-        const customLink = `${baseUrl}?mode=verifyEmail&oobCode=${encodeURIComponent(oobCode)}&lang=pt&hl=pt-BR`;
-
-        const nodemailer = require("nodemailer");
-        const transporter = nodemailer.createTransport({
-          service: "gmail",
-          auth: {user: process.env.EMAIL_REMETENTE, pass: process.env.ARROZ},
-        });
-
-        const html = `<!doctype html>
-<html lang="pt-BR">
-  <body style="margin:0;padding:0;background:#f5f7fb;">
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      Confirme seu e-mail para ativar sua conta Uai Decants.
-    </div>
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f5f7fb;">
-      <tr>
-        <td align="center" style="padding:24px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:12px;">
-            <tr>
-              <td align="center" style="padding:28px 28px 8px 28px;">
-                <img src="https://drive.google.com/uc?export=view&id=1NzJS7rqZxgDZKOUXa-GPS9OwKWJUF6bh" alt="Uai Decants" width="120" height="120" style="display:block;border:0;outline:none;text-decoration:none;border-radius:8px;">
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:0 28px;">
-                <h1 style="margin:8px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#0d6efd;">Confirme seu e-mail</h1>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 28px 0 28px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#4a5568;">
-                  Olá, <strong>${nome || ""}</strong>! Clique no botão para ativar sua conta.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:22px 28px;">
-                <a href="${customLink}" target="_blank"
-                   style="display:inline-block;background:#27ae60;color:#ffffff;text-decoration:none;
-                          font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;
-                          padding:12px 28px;border-radius:8px;">
-                  Confirmar e-mail
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:0 28px 6px 28px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#718096;">
-                  Se você não criou esta conta, ignore este e-mail.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 16px 24px 16px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#a0aec0;">
-                  Dúvidas? <a href="mailto:suporte@uaidecants.com.br" style="color:#4a5568;text-decoration:underline;">suporte@uaidecants.com.br</a> • WhatsApp: (38) 99724-8602
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-
-        await transporter.sendMail({
-          from: "\"Uai Decants\" <suporte@uaidecants.com.br>",
-          to: email,
-          subject: "Confirme seu e-mail - Uai Decants",
-          html,
-          text: `Ative sua conta: ${customLink}`,
-        });
+        customLink = `${baseUrl}?mode=verifyEmail&oobCode=${encodeURIComponent(oobCode)}&lang=pt&hl=pt-BR`;
+      } catch (err) {
+        // Se o usuário não existir, não expõe a existência. Loga somente erros diferentes.
+        if (!err || err.code !== "auth/user-not-found") {
+          console.error("generateEmailVerificationLink:", err);
+        }
       }
 
-      // sempre responde sucesso para não expor se o e-mail existe
+      if (customLink) {
+        const transporter = getMailer();
+        const html = buildVerifyEmailHtml(nome || "", customLink);
+        // Envia em background (não aguarda SMTP)
+        transporter
+            .sendMail({
+              from: `"Uai Decants" <suporte@uaidecants.com.br>`,
+              to: email,
+              subject: "Confirme seu e-mail - Uai Decants",
+              html,
+              text: `Ative sua conta: ${customLink}`,
+            })
+            .catch((e) => console.error("sendMail (resend):", e));
+      }
+
       return res.json({success: true, message: "Se o e-mail estiver cadastrado, reenviamos o link de verificação."});
     } catch (err) {
       console.error("POST /auth/resend-verification:", err);
@@ -336,116 +354,41 @@ function createApp() {
     }
   });
 
+  // Reset de senha (usa mailer em cache)
   app.post("/auth/password-reset", async (req, res) => {
     try {
       ensureInit();
       const {email, redirectUrl} = req.body || {};
       if (!email) return res.status(400).json({success: false, message: "Email é obrigatório."});
 
-      // Não revelar existência
-      let userExists = true;
+      const baseUrl = String(redirectUrl || "https://www.uaidecants.com.br/recuperar-senha");
+      const actionSettings = {url: baseUrl, handleCodeInApp: true};
+
+      let customLink = null;
       try {
-        await admin.auth().getUserByEmail(String(email).trim());
-      } catch (err) {
-        userExists = false;
-      }
-
-      if (userExists) {
-        const baseUrl = String(redirectUrl || "https://www.uaidecants.com.br/recuperar-senha");
-
-        // Gera o link oficial só para obter o oobCode
-        const actionSettings = {url: baseUrl, handleCodeInApp: true};
         const link = await admin.auth().generatePasswordResetLink(String(email).trim(), actionSettings);
-
-        // Extrai o código e monta link direto para sua página
         const u = new URL(link);
         const oobCode = u.searchParams.get("oobCode");
-        const customLink = `${baseUrl}?mode=resetPassword&oobCode=${encodeURIComponent(oobCode)}&lang=pt&hl=pt-BR`;
+        customLink = `${baseUrl}?mode=resetPassword&oobCode=${encodeURIComponent(oobCode)}&lang=pt&hl=pt-BR`;
+      } catch (err) {
+        if (!err || err.code !== "auth/user-not-found") {
+          console.error("generatePasswordResetLink:", err);
+        }
+      }
 
-        const nodemailer = require("nodemailer");
-        const transporter = nodemailer.createTransport({
-          service: "gmail",
-          auth: {user: process.env.EMAIL_REMETENTE, pass: process.env.ARROZ},
-        });
-
-        const html = `<!doctype html>
-<html lang="pt-BR">
-  <body style="margin:0;padding:0;background:#f5f7fb;">
-    <!-- Preheader invisível (melhora preview e evita cortes estranhos) -->
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      Redefinir senha da sua conta Uai Decants.
-    </div>
-
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f5f7fb;">
-      <tr>
-        <td align="center" style="padding:24px;">
-          <!-- CARD ÚNICO -->
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:12px;">
-            <tr>
-              <td align="center" style="padding:28px 28px 8px 28px;">
-                <img src="https://drive.google.com/uc?export=view&id=1NzJS7rqZxgDZKOUXa-GPS9OwKWJUF6bh" alt="Uai Decants" width="120" height="120" style="display:block;border:0;outline:none;text-decoration:none;border-radius:8px;">
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:0 28px;">
-                <h1 style="margin:8px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#0d6efd;">Redefinir senha</h1>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 28px 0 28px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#4a5568;">
-                  Para criar uma nova senha, clique no botão abaixo:
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:22px 28px;">
-                <a href="${customLink}" target="_blank"
-                   style="display:inline-block;background:#0d6efd;color:#ffffff;text-decoration:none;
-                          font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;
-                          padding:12px 28px;border-radius:8px;">
-                  Criar nova senha
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:0 28px 6px 28px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#718096;">
-                  Se você não solicitou, ignore este e-mail.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:16px 0 0 0;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td height="1" style="background:#edf2f7;"></td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 16px 24px 16px;">
-                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#a0aec0;">
-                  Dúvidas? <a href="mailto:suporte@uaidecants.com.br" style="color:#4a5568;text-decoration:underline;">suporte@uaidecants.com.br</a> • WhatsApp: (38) 99724-8602
-                </p>
-              </td>
-            </tr>
-          </table>
-          <!-- FIM CARD -->
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-
-        await transporter.sendMail({
-          from: "\"Uai Decants\" <suporte@uaidecants.com.br>",
-          to: email,
-          subject: "Redefina sua senha - Uai Decants",
-          html,
-          text: "Para criar uma nova senha, abra: " + customLink,
-        });
+      if (customLink) {
+        const transporter = getMailer();
+        const html = buildResetHtml(customLink);
+        // Envia em background (não aguarda SMTP)
+        transporter
+            .sendMail({
+              from: `"Uai Decants" <suporte@uaidecants.com.br>`,
+              to: email,
+              subject: "Redefina sua senha - Uai Decants",
+              html,
+              text: "Para criar uma nova senha, abra: " + customLink,
+            })
+            .catch((e) => console.error("sendMail (reset):", e));
       }
 
       return res.json({success: true, message: "Se o e-mail estiver cadastrado, enviaremos as instruções."});
