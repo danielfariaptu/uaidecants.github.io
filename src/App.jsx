@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom"; // + Link
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
+import ConfirmEmailPage from "./ConfirmEmailPage.jsx";
+import PassRecoveryPage from "./PassRecoveryPage.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { auth } from "./firebaseConfig";
 import {
@@ -8,23 +10,33 @@ import {
   sendEmailVerification,
   onAuthStateChanged,               // + persistência
   setPersistence,
-  browserLocalPersistence,
+  browserLocalPersistence
 } from "firebase/auth";
 import { signOut } from "firebase/auth";
 import { cpf as cpfLib } from "cpf-cnpj-validator"; // + lib de CPF
 
 // Toast visual feedback (Bootstrap, sem CSS extra)
-function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
+function ToastBootstrap({ mensagem, tipo = "info", show, onClose, fixed = false, placement = "br" }) {
   if (!show || !mensagem) return null;
-  // Bootstrap aceita: "primary", "secondary", "success", "danger", "warning", "info", "light", "dark"
   const tipoBootstrap = tipo === "error" ? "danger" : tipo;
-  return (
+
+  // mapa de posições
+  const pos = {
+    br: "bottom-0 end-0",
+    tr: "top-0 end-0",
+    bl: "bottom-0 start-0",
+    tl: "top-0 start-0",
+    tc: "top-0 start-50 translate-middle-x",
+    bc: "bottom-0 start-50 translate-middle-x",
+  }[placement] || "bottom-0 end-0";
+
+  const toastEl = (
     <div
       className={`toast align-items-center text-bg-${tipoBootstrap} border-0 show`}
       role="alert"
       aria-live="assertive"
       aria-atomic="true"
-      style={{ width: "100%" }}
+      style={fixed ? undefined : { width: "100%" }}
     >
       <div className="d-flex">
         <div className="toast-body">{mensagem}</div>
@@ -34,8 +46,17 @@ function ToastBootstrap({ mensagem, tipo = "info", show, onClose }) {
           data-bs-dismiss="toast"
           aria-label="Close"
           onClick={onClose}
-        ></button>
+        />
       </div>
+    </div>
+  );
+
+  if (!fixed) return toastEl;
+
+  // container fixo (não empurra a página)
+  return (
+    <div className={`toast-container position-fixed p-3 ${pos}`} style={{ zIndex: 2000 }}>
+      {toastEl}
     </div>
   );
 }
@@ -116,24 +137,24 @@ function LoginAdmin({ onLogin, adminLogado, mostrarToast }) {
   const [erroLogin, setErroLogin] = useState("");
 
   useEffect(() => {
-  async function check() {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      onLogin(false);
-      return;
+    async function check() {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        onLogin(false);
+        return;
+      }
+      try {
+        const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/admin-check", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        onLogin(resp.status === 200);
+      } catch {
+        onLogin(false);
+      }
     }
-    try {
-      const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/admin-check", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      onLogin(resp.status === 200);
-    } catch {
-      onLogin(false);
-    }
-  }
-  check();
-}, [onLogin]);
+    check();
+  }, [onLogin]);
 
   async function handleLoginAdmin(e) {
     e.preventDefault();
@@ -311,6 +332,39 @@ function maskCPF(v) {
   return [p1, p2 && `.${p2}`, p3 && `.${p3}`, p4 && `-${p4}`].filter(Boolean).join("");
 }
 
+// Remove +55 se vier em E.164 e limita a 11 dígitos (DD + número)
+function normalizeBRPhoneDigits(v) {
+  let d = onlyDigits(v || "");
+  if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+  return d.slice(0, 11);
+}
+
+// Máscara de telefone BR
+function maskPhoneBR(v) {
+  const d = normalizeBRPhoneDigits(v);
+  if (!d) return "";
+  if (d.length <= 2) return `(${d}`;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+const UFS = [
+  { sigla: "AC", nome: "Acre" }, { sigla: "AL", nome: "Alagoas" },
+  { sigla: "AP", nome: "Amapá" }, { sigla: "AM", nome: "Amazonas" },
+  { sigla: "BA", nome: "Bahia" }, { sigla: "CE", nome: "Ceará" },
+  { sigla: "DF", nome: "Distrito Federal" }, { sigla: "ES", nome: "Espírito Santo" },
+  { sigla: "GO", nome: "Goiás" }, { sigla: "MA", nome: "Maranhão" },
+  { sigla: "MT", nome: "Mato Grosso" }, { sigla: "MS", nome: "Mato Grosso do Sul" },
+  { sigla: "MG", nome: "Minas Gerais" }, { sigla: "PA", nome: "Pará" },
+  { sigla: "PB", nome: "Paraíba" }, { sigla: "PR", nome: "Paraná" },
+  { sigla: "PE", nome: "Pernambuco" }, { sigla: "PI", nome: "Piauí" },
+  { sigla: "RJ", nome: "Rio de Janeiro" }, { sigla: "RN", nome: "Rio Grande do Norte" },
+  { sigla: "RS", nome: "Rio Grande do Sul" }, { sigla: "RO", nome: "Rondônia" },
+  { sigla: "RR", nome: "Roraima" }, { sigla: "SC", nome: "Santa Catarina" },
+  { sigla: "SP", nome: "São Paulo" }, { sigla: "SE", nome: "Sergipe" },
+  { sigla: "TO", nome: "Tocantins" },
+];
+
 // Breadcrumb label para cada painel do usuário
 function breadcrumbLabel(key) {
   switch (key) {
@@ -324,9 +378,12 @@ function breadcrumbLabel(key) {
 }
 
 // Box reutilizável com header + botão X
-function NavBox({ title, breadcrumb, onClose, maxWidth = 680, children }) {
+function NavBox({ title, breadcrumb, onClose, maxWidth = 680, toastSlot, children }) {
   return (
     <div className="container mx-auto" style={{ maxWidth }}>
+      {/* toasts fixos do painel */}
+      <div className="toast-rail">{toastSlot}</div>
+
       {breadcrumb && (
         <div className="mb-2 small text-gold">{breadcrumb}</div>
       )}
@@ -392,7 +449,7 @@ export default function App() {
   // Persistência do login e restauração do perfil ao abrir/voltar ao início
   useEffect(() => {
     // garante persistência em localStorage
-    setPersistence(auth, browserLocalPersistence).catch(() => {});
+    setPersistence(auth, browserLocalPersistence).catch(() => { });
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user && user.emailVerified) {
         setUsuarioLogado(true);
@@ -400,7 +457,7 @@ export default function App() {
         try {
           const t = await user.getIdToken();
           localStorage.setItem("token", t);
-        } catch {}
+        } catch { }
         await carregarPerfilEEnderecos();
       } else {
         setUsuarioLogado(false);
@@ -589,16 +646,54 @@ export default function App() {
     }
   }
 
+  // NOVO: estados para cadastro
+  const [senhaCadastro, setSenhaCadastro] = useState("");
+
+  // Lazy-load do zxcvbn
+  const [zxcvbnFn, setZxcvbnFn] = useState(null);
+  const loadZxcvbn = useCallback(async () => {
+    if (zxcvbnFn) return zxcvbnFn;
+    const mod = await import("zxcvbn");
+    const fn = mod.default || mod;
+    setZxcvbnFn(() => fn);
+    return fn;
+  }, [zxcvbnFn]);
+
+  // Prefetch quando abrir o painel "Criar Conta"
+  useEffect(() => {
+    if (contaMenu === "criar") {
+      const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 100));
+      idle(() => { loadZxcvbn().catch(() => { }); });
+    }
+  }, [contaMenu, loadZxcvbn]);
+
+  // Heurística leve enquanto zxcvbn não carrega
+  function fallbackScore(p = "") {
+    let s = 0;
+    if (p.length >= 8) s++;
+    if (/[A-Z]/.test(p) && /[a-z]/.test(p)) s++;
+    if (/\d/.test(p)) s++;
+    if (/[^A-Za-z0-9]/.test(p)) s++;
+    return Math.min(s, 4);
+  }
+  const getScore = (p) => (zxcvbnFn ? zxcvbnFn(p).score : fallbackScore(p)); // 0..4
+  const isStrong = (p) => getScore(p) >= 3 && String(p).length >= 8;
+
   return (
     <BrowserRouter>
       <div className="container py-4">
-        {/* Toast visual global (ex: login/logout) */}
-        <ToastBootstrap
-          mensagem={toast.mensagem}
-          tipo={toast.tipo}
-          show={!!toast.mensagem}
-          onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
-        />
+        {/* Toast global só aparece fora dos painéis */}
+        {!contaMenu && (
+          <ToastBootstrap
+            mensagem={toast.mensagem}
+            tipo={toast.tipo}
+            show={!!toast.mensagem}
+            onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
+            fixed
+            placement="br" // br,tr,bl,tl,tc,bc
+          />
+        )}
+
         <nav className="navbar mb-4">
           {/* Usa Link para evitar reload da página (não perde estado/login) */}
           <Link to="/">
@@ -662,26 +757,41 @@ export default function App() {
           />
         </nav>
 
-        {/* Renderização das telas do menu conta */}
+        {/* PAINEL: Criar conta */}
         {contaMenu === "criar" && (
           <NavBox
             title="Criar Conta"
             breadcrumb={breadcrumbLabel("criar")}
             onClose={() => setContaMenu("")}
             maxWidth={560}
+            toastSlot={
+              <>
+                <ToastBootstrap
+                  mensagem={toast.mensagem}
+                  tipo={toast.tipo}
+                  show={!!toast.mensagem}
+                  onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
+                />
+                <ToastBootstrap
+                  mensagem={toastCadastro.mensagem}
+                  tipo={toastCadastro.tipo}
+                  show={!!toastCadastro.mensagem}
+                  onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+                />
+              </>
+            }
           >
-            <ToastBootstrap
-              mensagem={toastCadastro.mensagem}
-              tipo={toastCadastro.tipo}
-              show={!!toastCadastro.mensagem}
-              onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
-            />
             <form
-              onSubmit={async e => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                const nome = e.target.nome.value;
-                const email = e.target.email.value;
-                const senha = e.target.senha.value;
+                const nome = e.currentTarget.nome.value;
+                const email = e.currentTarget.email.value;
+                const senha = senhaCadastro;
+
+                if (!isStrong(senha)) {
+                  mostrarToastCadastro("Senha fraca. Use 8+ caracteres e combine maiúsculas, minúsculas, número e símbolo.", "warning");
+                  return;
+                }
                 try {
                   const resp = await fetch("https://us-central1-uaidecants.cloudfunctions.net/api/usuarios", {
                     method: "POST",
@@ -690,7 +800,7 @@ export default function App() {
                   });
                   const data = await resp.json();
                   if (data.success) {
-                    mostrarToastCadastro("Conta criada com sucesso!", "success");
+                    mostrarToastCadastro("Conta criada com sucesso! Verifique o Email Antes de Acessar!", "success");
                     setContaMenu("login");
                   } else {
                     mostrarToastCadastro(data.message || "Erro ao criar conta.", "error");
@@ -710,9 +820,40 @@ export default function App() {
               </div>
               <div className="mb-2">
                 <label className="form-label">Senha</label>
-                <input type="password" name="senha" className="form-control" required minLength={6} />
+                <input
+                  type="password"
+                  name="senha"
+                  className="form-control"
+                  value={senhaCadastro}
+                  onFocus={() => loadZxcvbn().catch(() => { })}
+                  onChange={(e) => setSenhaCadastro(e.target.value)}
+                  placeholder="Mínimo 8 caracteres, use símbolos"
+                  required
+                />
+                {senhaCadastro && (() => {
+                  const s = getScore(senhaCadastro); // 0..4
+                  const meta = [
+                    { label: "Muito fraca", color: "danger", width: "20%" },
+                    { label: "Fraca", color: "warning", width: "40%" },
+                    { label: "Razoável", color: "info", width: "60%" },
+                    { label: "Boa", color: "primary", width: "80%" },
+                    { label: "Excelente", color: "success", width: "100%" },
+                  ][Math.min(s, 4)];
+                  return (
+                    <div className="mt-2">
+                      <div className="progress" style={{ height: 8 }}>
+                        <div className={`progress-bar bg-${meta.color}`} style={{ width: meta.width }} />
+                      </div>
+                      <small className={`d-block text-${meta.color}`}>Força: {meta.label}</small>
+                      <small className="text-muted">Recomendado: 8+ caracteres com maiúsculas, minúsculas, números e símbolos.</small>
+                    </div>
+                  );
+                })()}
               </div>
-              <button type="submit" className="btn btn-success w-100">Criar Conta</button>
+
+              <button type="submit" className="btn btn-success w-100" disabled={!isStrong(senhaCadastro)}>
+                Criar Conta
+              </button>
             </form>
           </NavBox>
         )}
@@ -724,13 +865,23 @@ export default function App() {
             breadcrumb={breadcrumbLabel("login")}
             onClose={() => setContaMenu("")}
             maxWidth={560}
+            toastSlot={
+              <>
+                <ToastBootstrap
+                  mensagem={toast.mensagem}
+                  tipo={toast.tipo}
+                  show={!!toast.mensagem}
+                  onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
+                />
+                <ToastBootstrap
+                  mensagem={toastCadastro.mensagem}
+                  tipo={toastCadastro.tipo}
+                  show={!!toastCadastro.mensagem}
+                  onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+                />
+              </>
+            }
           >
-            <ToastBootstrap
-              mensagem={toastCadastro.mensagem}
-              tipo={toastCadastro.tipo}
-              show={!!toastCadastro.mensagem}
-              onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
-            />
             <form
               onSubmit={async e => {
                 e.preventDefault();
@@ -739,12 +890,31 @@ export default function App() {
                 try {
                   const cred = await signInWithEmailAndPassword(auth, email, senha);
                   const user = cred.user;
+
                   if (!user.emailVerified) {
-                    try { await sendEmailVerification(user); } catch {}
-                    mostrarToastCadastro("Verifique seu e-mail. Reenviei o link de verificação.", "warning");
+                    let reenviado = false;
+                    try {
+                      const resp = await fetch(`${API_BASE}/auth/resend-verification`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          email: user.email,
+                          nome: user.displayName || "",
+                          redirectUrl: `${window.location.origin}/confirmar-email`,
+                        }),
+                      });
+                      reenviado = resp.ok;
+                    } catch { }
+
+                    if (!reenviado) {
+                      try { await sendEmailVerification(user); } catch { }
+                    }
+
+                    mostrarToastCadastro("E-mail não verificado. Reenviamos o link para seu e-mail.", "warning");
                     await signOut(auth);
                     return;
                   }
+
                   const token = await user.getIdToken();
                   localStorage.setItem("token", token);
                   setUsuarioLogado(true);
@@ -765,6 +935,30 @@ export default function App() {
                 <input type="password" name="senha" className="form-control" required />
               </div>
               <button type="submit" className="btn btn-primary w-100">Entrar</button>
+              <button
+                type="button"
+                className="btn btn-link forgot-link w-100 d-inline-flex align-items-center justify-content-center mt-3"
+                onClick={async (e) => {
+                  const form = e.currentTarget.form;
+                  const email = form?.email?.value?.trim();
+                  if (!email) { mostrarToastCadastro("Informe seu email para recuperar a senha.", "warning"); return; }
+                  try {
+                    const resp = await fetch(`${API_BASE}/auth/password-reset`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ email, redirectUrl: `${window.location.origin}/recuperar-senha` })
+                    });
+                    const js = await resp.json();
+                    if (resp.ok && js?.success) mostrarToastCadastro("Enviamos um email para redefinir sua senha.", "success");
+                    else mostrarToastCadastro(js?.message || "Não foi possível enviar o email.", "error");
+                  } catch {
+                    mostrarToastCadastro("Erro de conexão ao solicitar redefinição.", "error");
+                  }
+                }}
+              >
+                <i className="bi bi-key"></i>
+                Esqueci minha senha!
+              </button>
             </form>
           </NavBox>
         )}
@@ -776,6 +970,22 @@ export default function App() {
             breadcrumb={breadcrumbLabel("dados")}
             onClose={() => setContaMenu("")}
             maxWidth={680}
+            toastSlot={
+              <>
+                <ToastBootstrap
+                  mensagem={toast.mensagem}
+                  tipo={toast.tipo}
+                  show={!!toast.mensagem}
+                  onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
+                />
+                <ToastBootstrap
+                  mensagem={toastCadastro.mensagem}
+                  tipo={toastCadastro.tipo}
+                  show={!!toastCadastro.mensagem}
+                  onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+                />
+              </>
+            }
           >
             {carregandoPerfil && <div>Carregando…</div>}
             {!!perfil && (
@@ -813,7 +1023,13 @@ export default function App() {
                 </div>
                 <div className="mb-2">
                   <label className="form-label">Telefone (WhatsApp)</label>
-                  <input name="telefone" className="form-control bg-white text-dark" defaultValue={perfil.telefone || ""} placeholder="(DDD) 99999-9999" />
+                  <input
+                    name="telefone"
+                    className="form-control bg-white text-dark"
+                    defaultValue={maskPhoneBR(perfil.telefone || "")}
+                    placeholder="(XX) 99999-9999"
+                    onInput={(e) => { e.currentTarget.value = maskPhoneBR(e.currentTarget.value); }}
+                  />
                 </div>
                 <div className="mb-3">
                   <label className="form-label">CPF</label>
@@ -843,11 +1059,28 @@ export default function App() {
             breadcrumb={breadcrumbLabel("enderecos")}
             onClose={() => setContaMenu("")}
             maxWidth={820}
+            toastSlot={
+              <>
+                <ToastBootstrap
+                  mensagem={toast.mensagem}
+                  tipo={toast.tipo}
+                  show={!!toast.mensagem}
+                  onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
+                />
+                <ToastBootstrap
+                  mensagem={toastCadastro.mensagem}
+                  tipo={toastCadastro.tipo}
+                  show={!!toastCadastro.mensagem}
+                  onClose={() => setToastCadastro({ mensagem: "", tipo: toastCadastro.tipo })}
+                />
+              </>
+            }
           >
             <EnderecosUI
               perfil={perfil}
               enderecos={enderecos}
               onReload={async () => { await carregarPerfilEEnderecos(); }}
+              showToast={mostrarToast}   // novo: para feedback
             />
           </NavBox>
         )}
@@ -1021,6 +1254,8 @@ export default function App() {
               </>
             }
           />
+          <Route path="/recuperar-senha" element={<PassRecoveryPage />} />
+          <Route path="/confirmar-email" element={<ConfirmEmailPage />} />
           <Route
             path="/godpleaseno"
             element={
@@ -1046,185 +1281,476 @@ export default function App() {
 }
 
 // -------- Endereços: inputs com fundo branco --------
-function EnderecosUI({ perfil, enderecos, onReload }) {
+function EnderecosUI({ perfil, enderecos, onReload, showToast }) {
+  const MAX_ENDERECOS = 4;
+  const lista = Array.isArray(enderecos) ? enderecos : [];
+
   const [adicionando, setAdicionando] = useState(false);
-  const [editando, setEditando] = useState(null); // id do endereço em edição
+
   const base = {
     nomeDestinatario: perfil?.nome || "",
-    telefone: perfil?.telefone || "",
-    logradouro: "", numero: "", complemento: "",
-    bairro: "", cep: "", cidade: "", estado: "",
-    principal: false,
+    telefone: maskPhoneBR(perfil?.telefone || ""),
+    logradouro: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cep: "",
+    cidade: "",
+    estado: "",
+    principal: lista.length === 0,
   };
   const [form, setForm] = useState(base);
-  const [formEdit, setFormEdit] = useState(null);
 
   useEffect(() => {
-    setForm((f) => ({ ...f, nomeDestinatario: perfil?.nome || "", telefone: perfil?.telefone || "" }));
+    setForm((f) => ({
+      ...f,
+      nomeDestinatario: perfil?.nome || "",
+      telefone: maskPhoneBR(perfil?.telefone || ""),
+    }));
   }, [perfil]);
+
+  const podeAdicionar = lista.length < MAX_ENDERECOS;
+
+  const ordenados = React.useMemo(
+    () => [...lista].sort((a, b) => (b.principal === true) - (a.principal === true)),
+    [lista]
+  );
+
+  async function carregarCidades(uf) {
+    if (!uf) return [];
+    try {
+      const r = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`);
+      const js = await r.json();
+      return js.map((m) => m.nome).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    } catch {
+      return [];
+    }
+  }
 
   async function preencherPorCEP(cep, setter) {
     const dados = await buscarCEP(cep || "");
     if (dados) {
-      setter((s) => ({ ...s, cep, logradouro: dados.logradouro, bairro: dados.bairro, cidade: dados.cidade, estado: dados.estado }));
+      const cidades = await carregarCidades(dados.estado);
+      setter((s) => ({
+        ...s,
+        cep,
+        logradouro: dados.logradouro,
+        bairro: dados.bairro,
+        cidade: dados.cidade,
+        estado: dados.estado,
+        _cidades: cidades,
+      }));
     }
   }
 
   async function salvarNovo() {
-    const res = await api("/me/addresses", { method: "POST", body: JSON.stringify(form) });
+    if (!podeAdicionar) {
+      showToast?.(`Limite de ${MAX_ENDERECOS} endereços atingido.`, "warning");
+      return;
+    }
+    const { _cidades, ...payload } = form;
+    const res = await api("/me/addresses", { method: "POST", body: JSON.stringify(payload) });
     const json = await res.json();
     if (json.success) {
       setAdicionando(false);
       setForm(base);
-      await onReload();
+      await onReload?.();
+      showToast?.("Endereço salvo.", "success");
+    } else {
+      showToast?.(json.message || "Erro ao salvar endereço.", "error");
     }
   }
 
-  async function salvarEdicao(id) {
-    const res = await api(`/me/addresses/${id}`, { method: "PUT", body: JSON.stringify(formEdit) });
-    const json = await res.json();
-    if (json.success) {
-      setEditando(null);
-      setFormEdit(null);
-      await onReload();
-    }
-  }
+  // Card de endereço isolado (estado local) — evita perder foco no mobile
+  const CardEndereco = React.memo(function CardEndereco({ e }) {
+    const [emEdicao, setEmEdicao] = useState(false);
+    const [edit, setEdit] = useState(null);
+    const [cidades, setCidades] = useState([]);
 
-  const principal = enderecos.find((e) => e.principal);
-  const complemento = enderecos.find((e) => !e.principal);
+    const onlyNum = (v) => onlyDigits(v);
 
-  const CardEndereco = ({ e }) => (
-    <div className="card p-3 mb-3">
-      <div className="d-flex justify-content-between">
-        <strong>{e.principal ? "Endereço Principal" : "Endereço Complementar"}</strong>
-        <button className="btn btn-sm btn-outline-primary" onClick={() => {
-          if (editando === e.id) { setEditando(null); setFormEdit(null); } else { setEditando(e.id); setFormEdit({ ...e }); }
-        }}>
-          {editando === e.id ? "Cancelar" : "Editar"}
-        </button>
-      </div>
-      {editando === e.id ? (
-        <div className="mt-2">
-          <div className="row g-2">
-            <div className="col-md-6">
-              <label className="form-label">Nome do destinatário</label>
-              <input className="form-control bg-white text-dark" value={formEdit.nomeDestinatario || ""} onChange={ev => setFormEdit({ ...formEdit, nomeDestinatario: ev.target.value })} />
+    useEffect(() => {
+      // se trocar a lista/obj, sai da edição para evitar inconsistência
+      setEmEdicao(false);
+      setEdit(null);
+      setCidades([]);
+    }, [e.id]);
+
+    const abrirEdicao = async () => {
+      setEmEdicao(true);
+      setEdit({
+        ...e,
+        telefone: maskPhoneBR(e.telefone || ""),
+      });
+      setCidades(await carregarCidades(e.estado));
+    };
+
+    const cancelarEdicao = () => {
+      setEmEdicao(false);
+      setEdit(null);
+      setCidades([]);
+    };
+
+    const salvarEdicao = async () => {
+      const { id, ...body } = edit || {};
+      const res = await api(`/me/addresses/${e.id}`, { method: "PUT", body: JSON.stringify(body) });
+      const json = await res.json();
+      if (json.success) {
+        cancelarEdicao();
+        await onReload?.();
+        showToast?.("Endereço atualizado.", "success");
+      } else {
+        showToast?.(json.message || "Erro ao atualizar endereço.", "error");
+      }
+    };
+
+    const excluirEndereco = async () => {
+      if (!window.confirm("Tem certeza que deseja excluir este endereço?")) return;
+      const res = await api(`/me/addresses/${e.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (json.success) {
+        await onReload?.();
+        showToast?.("Endereço excluído.", "success");
+      } else {
+        showToast?.(json.message || "Erro ao excluir endereço.", "error");
+      }
+    };
+
+    return (
+      <div className="card p-3 mb-3">
+        <div className="d-flex justify-content-between align-items-center">
+          <strong>{e.principal ? "Endereço Principal" : "Endereço"}</strong>
+          <div className="d-flex gap-2">
+            {!emEdicao && (
+              <button className="btn btn-sm btn-outline-danger" onClick={excluirEndereco}>Excluir</button>
+            )}
+            <button
+              className="btn btn-sm btn-outline-primary"
+              onClick={emEdicao ? cancelarEdicao : abrirEdicao}
+            >
+              {emEdicao ? "Cancelar" : "Editar"}
+            </button>
+          </div>
+        </div>
+
+        {emEdicao ? (
+          <div className="mt-2">
+            <div className="row g-2">
+              <div className="col-md-6">
+                <label className="form-label">Nome do destinatário</label>
+                <input
+                  className="form-control bg-white text-dark"
+                  required
+                  value={edit?.nomeDestinatario || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, nomeDestinatario: ev.target.value }))}
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label">Telefone</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  className="form-control bg-white text-dark"
+                  required
+                  maxLength={16}
+                  value={edit?.telefone || ""}
+                  placeholder="(DD) 99999-9999"
+                  onChange={(ev) => setEdit((s) => ({ ...s, telefone: maskPhoneBR(ev.target.value) }))}
+                />
+              </div>
+
+              <div className="col-5">
+                <label className="form-label">CEP</label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  className="form-control bg-white text-dark"
+                  required
+                  maxLength={8}
+                  value={edit?.cep || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, cep: onlyNum(ev.target.value).slice(0, 8) }))}
+                  onBlur={() =>
+                    preencherPorCEP(edit?.cep, (setter) => setEdit((s) => ({ ...s, ...setter })))
+                  }
+                />
+              </div>
+              <div className="col-7">
+                <label className="form-label">Rua (Logradouro)</label>
+                <input
+                  className="form-control bg-white text-dark"
+                  required
+                  value={edit?.logradouro || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, logradouro: ev.target.value }))}
+                />
+              </div>
+
+              <div className="col-3">
+                <label className="form-label">Número</label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  className="form-control bg-white text-dark"
+                  required
+                  maxLength={6}
+                  value={edit?.numero || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, numero: onlyNum(ev.target.value).slice(0, 6) }))}
+                />
+              </div>
+              <div className="col-4">
+                <label className="form-label">Complemento</label>
+                <input
+                  className="form-control bg-white text-dark"
+                  value={edit?.complemento || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, complemento: ev.target.value }))}
+                />
+              </div>
+              <div className="col-5">
+                <label className="form-label">Bairro</label>
+                <input
+                  className="form-control bg-white text-dark"
+                  required
+                  value={edit?.bairro || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, bairro: ev.target.value }))}
+                />
+              </div>
+
+              <div className="col-6">
+                <label className="form-label">Estado</label>
+                <select
+                  className="form-select bg-white text-dark"
+                  required
+                  value={edit?.estado || ""}
+                  onChange={async (ev) => {
+                    const uf = ev.target.value;
+                    setEdit((s) => ({ ...s, estado: uf, cidade: "" }));
+                    setCidades(await carregarCidades(uf));
+                  }}
+                >
+                  <option value="">Selecione</option>
+                  {UFS.map((u) => (
+                    <option key={u.sigla} value={u.sigla}>
+                      {u.sigla} - {u.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-6">
+                <label className="form-label">Cidade</label>
+                <select
+                  className="form-select bg-white text-dark"
+                  required
+                  value={edit?.cidade || ""}
+                  onChange={(ev) => setEdit((s) => ({ ...s, cidade: ev.target.value }))}
+                >
+                  <option value="">{edit?.estado ? "Selecione" : "Escolha o Estado"}</option>
+                  {cidades.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-12 form-check mt-2">
+                <input
+                  id={`principal-${e.id}`}
+                  className="form-check-input"
+                  type="checkbox"
+                  checked={!!edit?.principal}
+                  onChange={(ev) => setEdit((s) => ({ ...s, principal: ev.target.checked }))}
+                />
+                <label className="form-check-label" htmlFor={`principal-${e.id}`}>
+                  Definir como principal
+                </label>
+              </div>
             </div>
-            <div className="col-md-6">
-              <label className="form-label">Telefone</label>
-              <input className="form-control bg-white text-dark" value={formEdit.telefone || ""} onChange={ev => setFormEdit({ ...formEdit, telefone: ev.target.value })} />
+            <button className="btn btn-success mt-3" onClick={salvarEdicao}>
+              Salvar edição
+            </button>
+          </div>
+        ) : (
+          <div className="mt-2">
+            <div>
+              {e.nomeDestinatario} — {maskPhoneBR(e.telefone)}
             </div>
-            <div className="col-5">
-              <label className="form-label">CEP</label>
-              <input
-                className="form-control bg-white text-dark"
-                value={formEdit.cep || ""}
-                onChange={ev => setFormEdit({ ...formEdit, cep: ev.target.value })}
-                onBlur={() => preencherPorCEP(formEdit.cep, setFormEdit)}
-              />
+            <div>
+              {e.logradouro}, {e.numero} {e.complemento ? `- ${e.complemento}` : ""}
             </div>
-            <div className="col-7">
-              <label className="form-label">Rua (Logradouro)</label>
-              <input className="form-control bg-white text-dark" value={formEdit.logradouro || ""} onChange={ev => setFormEdit({ ...formEdit, logradouro: ev.target.value })} />
-            </div>
-            <div className="col-3">
-              <label className="form-label">Número</label>
-              <input className="form-control bg-white text-dark" value={formEdit.numero || ""} onChange={ev => setFormEdit({ ...formEdit, numero: ev.target.value })} />
-            </div>
-            <div className="col-4">
-              <label className="form-label">Complemento</label>
-              <input className="form-control bg-white text-dark" value={formEdit.complemento || ""} onChange={ev => setFormEdit({ ...formEdit, complemento: ev.target.value })} />
-            </div>
-            <div className="col-5">
-              <label className="form-label">Bairro</label>
-              <input className="form-control bg-white text-dark" value={formEdit.bairro || ""} onChange={ev => setFormEdit({ ...formEdit, bairro: ev.target.value })} />
-            </div>
-            <div className="col-6">
-              <label className="form-label">Cidade</label>
-              <input className="form-control bg-white text-dark" value={formEdit.cidade || ""} onChange={ev => setFormEdit({ ...formEdit, cidade: ev.target.value })} />
-            </div>
-            <div className="col-6">
-              <label className="form-label">Estado</label>
-              <input className="form-control bg-white text-dark" value={formEdit.estado || ""} onChange={ev => setFormEdit({ ...formEdit, estado: ev.target.value })} />
-            </div>
-            <div className="col-12 form-check mt-2">
-              <input id={`principal-${e.id}`} className="form-check-input" type="checkbox" checked={!!formEdit.principal} onChange={ev => setFormEdit({ ...formEdit, principal: ev.target.checked })} />
-              <label className="form-check-label" htmlFor={`principal-${e.id}`}>Definir como principal</label>
+            <div>
+              {e.bairro} — {e.cidade}/{e.estado} • CEP {e.cep}
             </div>
           </div>
-          <button className="btn btn-success mt-3" onClick={() => salvarEdicao(e.id)}>Salvar edição</button>
-        </div>
-      ) : (
-        <div className="mt-2">
-          <div>{e.nomeDestinatario} — {e.telefone}</div>
-          <div>{e.logradouro}, {e.numero} {e.complemento ? `- ${e.complemento}` : ""}</div>
-          <div>{e.bairro} — {e.cidade}/{e.estado} • CEP {e.cep}</div>
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  });
 
   return (
     <div className="container" style={{ maxWidth: 820 }}>
       <h4>Meus Endereços</h4>
-      {principal ? <CardEndereco e={principal} /> : <div className="mb-3">Nenhum endereço principal cadastrado.</div>}
-      {complemento ? <CardEndereco e={complemento} /> : null}
+
+      {ordenados.length === 0 && <div className="mb-3">Nenhum endereço cadastrado.</div>}
+      {ordenados.map((e) => (
+        <CardEndereco key={e.id} e={e} />
+      ))}
 
       {!adicionando ? (
-        <button className="btn btn-outline-success" onClick={() => setAdicionando(true)}>+ Adicionar Endereço</button>
+        <div className="d-flex align-items-center gap-2">
+          <button
+            className="btn btn-outline-success"
+            onClick={() => setAdicionando(true)}
+            disabled={!podeAdicionar}
+            title={podeAdicionar ? "" : `Você já tem ${MAX_ENDERECOS} endereços`}
+          >
+            + Adicionar Endereço
+          </button>
+          {!podeAdicionar && <small className="text-muted">Limite de {MAX_ENDERECOS} endereços atingido.</small>}
+        </div>
       ) : (
         <div className="card p-3 mt-3">
           <strong>Novo Endereço</strong>
           <div className="row g-2 mt-1">
             <div className="col-md-6">
               <label className="form-label">Nome do destinatário</label>
-              <input className="form-control bg-white text-dark" value={form.nomeDestinatario} onChange={e => setForm({ ...form, nomeDestinatario: e.target.value })} />
+              <input
+                className="form-control bg-white text-dark"
+                required
+                value={form.nomeDestinatario}
+                onChange={(e) => setForm({ ...form, nomeDestinatario: e.target.value })}
+              />
             </div>
             <div className="col-md-6">
               <label className="form-label">Telefone</label>
-              <input className="form-control bg-white text-dark" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} />
+              <input
+                type="tel"
+                inputMode="tel"
+                className="form-control bg-white text-dark"
+                required
+                maxLength={16}
+                value={form.telefone}
+                onChange={(e) => setForm({ ...form, telefone: maskPhoneBR(e.target.value) })}
+                placeholder="(DD) 99999-9999"
+              />
             </div>
+
             <div className="col-5">
               <label className="form-label">CEP</label>
               <input
+                type="tel"
+                inputMode="numeric"
                 className="form-control bg-white text-dark"
+                required
+                maxLength={8}
                 value={form.cep}
-                onChange={e => setForm({ ...form, cep: e.target.value })}
+                onChange={(e) => setForm({ ...form, cep: onlyDigits(e.target.value).slice(0, 8) })}
                 onBlur={() => preencherPorCEP(form.cep, setForm)}
               />
             </div>
             <div className="col-7">
               <label className="form-label">Rua (Logradouro)</label>
-              <input className="form-control bg-white text-dark" value={form.logradouro} onChange={e => setForm({ ...form, logradouro: e.target.value })} />
+              <input
+                className="form-control bg-white text-dark"
+                required
+                value={form.logradouro}
+                onChange={(e) => setForm({ ...form, logradouro: e.target.value })}
+              />
             </div>
+
             <div className="col-3">
               <label className="form-label">Número</label>
-              <input className="form-control bg-white text-dark" value={form.numero} onChange={e => setForm({ ...form, numero: e.target.value })} />
+              <input
+                type="tel"
+                inputMode="numeric"
+                className="form-control bg-white text-dark"
+                required
+                maxLength={6}
+                value={form.numero}
+                onChange={(e) => setForm({ ...form, numero: onlyDigits(e.target.value).slice(0, 6) })}
+              />
             </div>
             <div className="col-4">
               <label className="form-label">Complemento</label>
-              <input className="form-control bg-white text-dark" value={form.complemento} onChange={e => setForm({ ...form, complemento: e.target.value })} />
+              <input
+                className="form-control bg-white text-dark"
+                value={form.complemento}
+                onChange={(e) => setForm({ ...form, complemento: e.target.value })}
+              />
             </div>
             <div className="col-5">
               <label className="form-label">Bairro</label>
-              <input className="form-control bg-white text-dark" value={form.bairro} onChange={e => setForm({ ...form, bairro: e.target.value })} />
+              <input
+                className="form-control bg-white text-dark"
+                required
+                value={form.bairro}
+                onChange={(e) => setForm({ ...form, bairro: e.target.value })}
+              />
+            </div>
+
+            <div className="col-6">
+              <label className="form-label">Estado</label>
+              <select
+                className="form-select bg-white text-dark"
+                required
+                value={form.estado}
+                onChange={async (e) => {
+                  const uf = e.target.value;
+                  setForm({ ...form, estado: uf, cidade: "" });
+                  const cidades = await carregarCidades(uf);
+                  setForm((s) => ({ ...s, _cidades: cidades }));
+                }}
+              >
+                <option value="">Selecione</option>
+                {UFS.map((u) => (
+                  <option key={u.sigla} value={u.sigla}>
+                    {u.sigla} - {u.nome}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="col-6">
               <label className="form-label">Cidade</label>
-              <input className="form-control bg-white text-dark" value={form.cidade} onChange={e => setForm({ ...form, cidade: e.target.value })} />
+              <select
+                className="form-select bg-white text-dark"
+                required
+                value={form.cidade}
+                onChange={(e) => setForm({ ...form, cidade: e.target.value })}
+              >
+                <option value="">{form.estado ? "Selecione" : "Escolha o Estado"}</option>
+                {(form._cidades || []).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="col-6">
-              <label className="form-label">Estado</label>
-              <input className="form-control bg-white text-dark" value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} />
-            </div>
+
             <div className="col-12 form-check mt-2">
-              <input id="novo-principal" className="form-check-input" type="checkbox" checked={form.principal} onChange={e => setForm({ ...form, principal: e.target.checked })} />
-              <label className="form-check-label" htmlFor="novo-principal">Definir como principal</label>
+              <input
+                id="novo-principal"
+                className="form-check-input"
+                type="checkbox"
+                checked={!!form.principal}
+                onChange={(e) => setForm({ ...form, principal: e.target.checked })}
+              />
+              <label className="form-check-label" htmlFor="novo-principal">
+                Definir como principal
+              </label>
             </div>
           </div>
+
           <div className="mt-3 d-flex gap-2">
-            <button className="btn btn-success" onClick={salvarNovo}>Salvar endereço</button>
-            <button className="btn btn-secondary" onClick={() => { setAdicionando(false); setForm(base); }}>Cancelar</button>
+            <button className="btn btn-success" onClick={salvarNovo} disabled={!podeAdicionar}>
+              Salvar endereço
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setAdicionando(false);
+                setForm(base);
+              }}
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}
