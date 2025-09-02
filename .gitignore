@@ -1,4 +1,3 @@
 node_modules/
 backend/uaidecants-firebase-adminsdk-fbsvc-bef53e38b4.json
-src/firebaseConfig.js'
-functions/firebase-debug.log
+src/firebaseConfig.js
