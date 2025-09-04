@@ -3,14 +3,25 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom"; // + Link
 import PerfumeAdmin from "./PerfumeAdmin.jsx";
 import ConfirmEmailPage from "./ConfirmEmailPage.jsx";
 import PassRecoveryPage from "./PassRecoveryPage.jsx";
+import Privacy from "./pages/Privacy.jsx";
+import Terms from "./pages/Terms.jsx";
+import DataDeletion from "./pages/DataDeletion.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { auth } from "./firebaseConfig";
+import { createPortal } from "react-dom";
 import {
-  signInWithEmailAndPassword,
   sendEmailVerification,
-  onAuthStateChanged,               // + persistência
+  onAuthStateChanged,
   setPersistence,
-  browserLocalPersistence
+  browserLocalPersistence,
+  GoogleAuthProvider,
+  FacebookAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  fetchSignInMethodsForEmail,
+  linkWithPopup,                 // <<< garantir este import
+  signInWithEmailAndPassword,
 } from "firebase/auth";
 import { signOut } from "firebase/auth";
 import { cpf as cpfLib } from "cpf-cnpj-validator"; // + lib de CPF
@@ -409,6 +420,119 @@ function NavBox({ title, breadcrumb, onClose, maxWidth = 680, toastSlot, childre
   );
 }
 
+function LinkAccountModal({
+  email,
+  providerName = "Facebook",
+  methods = [],
+  password,
+  onChangePassword,
+  busy = false,
+  onClose,
+  onLoginGoogle,
+  onSubmitPassword,
+}) {
+  const googleEnabled = methods.length === 0 || methods.includes("google.com");
+  const pwdEnabled = methods.length === 0 || methods.includes("password");
+
+  const node = (
+    <>
+      <div
+        className="modal-backdrop fade show"
+        style={{ display: "block", position: "fixed", inset: 0, zIndex: 1070 }}
+      />
+      <div
+        className="modal fade show d-block"
+        role="dialog"
+        aria-modal="true"
+        style={{ position: "fixed", inset: 0, zIndex: 1080, pointerEvents: "auto" }}
+      >
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content shadow">
+            <div className="modal-header">
+              <h5 className="modal-title d-flex align-items-center gap-2">
+                <i className="bi bi-link-45deg text-primary"></i>
+                Vincular método de login
+              </h5>
+              <button type="button" className="btn-close" onClick={onClose} aria-label="Fechar" />
+            </div>
+
+            <div className="modal-body">
+              <div className="alert alert-warning d-flex align-items-start" role="alert">
+                <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                <div>
+                  O e-mail <strong>{email}</strong> já possui outro método de login.
+                  Entre primeiro por ele para vincular o <strong>{providerName}</strong>.
+                </div>
+              </div>
+
+              <div className="d-grid gap-2 mb-3">
+                <button
+                  type="button"
+                  className="btn btn-outline-danger d-flex align-items-center justify-content-center"
+                  disabled={!googleEnabled || busy}
+                  onClick={onLoginGoogle}
+                >
+                  {busy && <span className="spinner-border spinner-border-sm me-2" role="status" />}
+                  <i className="bi bi-google me-2"></i>
+                  Continuar com Google
+                </button>
+              </div>
+
+              <div className="text-center text-muted my-2">
+                <span>ou</span>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onSubmitPassword?.();
+                }}
+                className="mt-2"
+              >
+                <div className="form-floating mb-2">
+                  <input
+                    type="password"
+                    className="form-control"
+                    id="linkPwdInput"
+                    placeholder="Senha da conta existente"
+                    value={password}
+                    onChange={(e) => onChangePassword?.(e.target.value)}
+                    disabled={!pwdEnabled || busy}
+                  />
+                  <label htmlFor="linkPwdInput">
+                    <i className="bi bi-key me-1"></i> Senha da conta existente
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  className="btn btn-success w-100 d-flex align-items-center justify-content-center"
+                  disabled={!pwdEnabled || !password || busy}
+                >
+                  {busy && <span className="spinner-border spinner-border-sm me-2" role="status" />}
+                  Entrar com senha e vincular
+                </button>
+                {!pwdEnabled && (
+                  <small className="text-muted d-block mt-2">
+                    Dica: se não souber o método, tente Google ou use “Esqueci minha senha”.
+                  </small>
+                )}
+              </form>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline-secondary" onClick={onClose} disabled={busy}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  return createPortal(node, document.body);
+}
+
 export default function App() {
   const [ordem, setOrdem] = useState(() => localStorage.getItem("ordem") || "alfabetica");
   const [pagina, setPagina] = useState(() => Number(localStorage.getItem("pagina")) || 1);
@@ -679,6 +803,96 @@ export default function App() {
   const getScore = (p) => (zxcvbnFn ? zxcvbnFn(p).score : fallbackScore(p)); // 0..4
   const isStrong = (p) => getScore(p) >= 3 && String(p).length >= 8;
 
+  // ===== Social Login (Google/Facebook) =====\
+
+
+  const [linkChoice, setLinkChoice] = React.useState(null);  // { email, providerTriedId, methods }
+  const [linkPwd, setLinkPwd] = React.useState("");
+  const [linkBusy, setLinkBusy] = React.useState(false);
+
+  const googleProvider = React.useMemo(() => {
+    const p = new GoogleAuthProvider();
+    p.setCustomParameters({ prompt: "select_account" });
+    return p;
+  }, []);
+
+  const facebookProvider = React.useMemo(() => {
+    const p = new FacebookAuthProvider();
+    p.addScope("email");                   // manter escopo de email
+    p.setCustomParameters({ display: "popup" });
+    return p;
+  }, []);
+
+  function providerFromId(id) {
+    if (id === "google.com") return new GoogleAuthProvider();
+    if (id === "facebook.com") return new FacebookAuthProvider();
+    return null;
+  }
+
+
+  async function finalizeLogin() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const token = await user.getIdToken();
+    localStorage.setItem("token", token);
+    setUsuarioLogado(true);
+    await carregarPerfilEEnderecos();
+    setContaMenu("dados");
+    mostrarToast("Login concluído!", "success");
+  }
+
+  // <<< SUBSTITUA sua função entrarComProvider por esta >>>
+  async function entrarComProvider(providerTried) {
+    try {
+      let result;
+      try {
+        result = await signInWithPopup(auth, providerTried);
+      } catch (e) {
+        if (e?.code === "auth/popup-blocked") {
+          await signInWithRedirect(auth, providerTried);
+          result = await getRedirectResult(auth);
+        } else if (e?.code === "auth/account-exists-with-different-credential") {
+          const email = e?.customData?.email;
+          if (!email) {
+            mostrarToastCadastro("Conta já existe para outro método.", "warning");
+            return;
+          }
+          // Tenta descobrir métodos existentes (se falhar, seguimos com lista vazia)
+          let methods = [];
+          try { methods = await fetchSignInMethodsForEmail(auth, email); } catch { }
+          setLinkChoice({
+            email,
+            providerTriedId: providerTried.providerId || "facebook.com",
+            methods, // ex.: ["google.com"] ou ["password"]
+          });
+          return;
+        } else {
+          throw e;
+        }
+      }
+
+      // Login normal (sem conflito)
+      const user = result?.user || auth.currentUser;
+      if (!user) return;
+      await finalizeLogin();
+    } catch (err) {
+      if (err?.code !== "auth/popup-closed-by-user") {
+        console.error(err);
+        mostrarToastCadastro("Falha no login social. Tente novamente.", "error");
+      }
+    }
+  }
+
+  React.useEffect(() => {
+  if (linkChoice) {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }
+}, [linkChoice]);
+
+  // ===== Fim Social Login =====
+
   return (
     <BrowserRouter>
       <div className="container py-4">
@@ -691,6 +905,50 @@ export default function App() {
             onClose={() => setToast({ mensagem: "", tipo: toast.tipo })}
             fixed
             placement="br" // br,tr,bl,tl,tc,bc
+          />
+        )}
+        {linkChoice && (
+          <LinkAccountModal
+            email={linkChoice.email}
+            providerName={linkChoice.providerTriedId === "facebook.com" ? "Facebook" : "Google"}
+            methods={linkChoice.methods || []}
+            password={linkPwd}
+            onChangePassword={setLinkPwd}
+            busy={linkBusy}
+            onClose={() => { setLinkChoice(null); setLinkPwd(""); }}
+            onLoginGoogle={async () => {
+              try {
+                setLinkBusy(true);
+                const { GoogleAuthProvider, signInWithPopup, linkWithPopup } = await import("firebase/auth");
+                await signInWithPopup(auth, new GoogleAuthProvider());
+                await linkWithPopup(auth.currentUser, providerFromId(linkChoice.providerTriedId));
+                setLinkChoice(null); setLinkPwd("");
+                await finalizeLogin();
+              } catch (err) {
+                console.error(err);
+                mostrarToastCadastro("Não foi possível vincular via Google.", "error");
+              } finally {
+                setLinkBusy(false);
+              }
+            }}
+            onSubmitPassword={async () => {
+              try {
+                setLinkBusy(true);
+                await signInWithEmailAndPassword(auth, linkChoice.email, linkPwd);
+                await linkWithPopup(auth.currentUser, providerFromId(linkChoice.providerTriedId));
+                setLinkChoice(null); setLinkPwd("");
+                await finalizeLogin();
+              } catch (err) {
+                if (err?.code === "auth/wrong-password") {
+                  mostrarToastCadastro("Senha incorreta.", "warning");
+                } else {
+                  console.error(err);
+                  mostrarToastCadastro("Não foi possível vincular via senha.", "error");
+                }
+              } finally {
+                setLinkBusy(false);
+              }
+            }}
           />
         )}
 
@@ -855,6 +1113,34 @@ export default function App() {
                 Criar Conta
               </button>
             </form>
+
+            {/* separador social */}
+        <div className="text-center my-3">
+          <span className="text-muted">ou</span>
+        </div>
+        {/* Botões sociais — estilo do modal, lado a lado (Facebook | Google) */}
+        <div className="row g-2">
+          <div className="col-6">
+            <button
+              type="button"
+              className="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center"
+              onClick={() => entrarComProvider(facebookProvider)}
+            >
+              <i className="bi bi-facebook me-2"></i>
+              Continuar com Facebook
+            </button>
+          </div>
+          <div className="col-6">
+            <button
+              type="button"
+              className="btn btn-outline-danger w-100 d-flex align-items-center justify-content-center"
+              onClick={() => entrarComProvider(googleProvider)}
+            >
+              <i className="bi bi-google me-2"></i>
+              Continuar com Google
+            </button>
+          </div>
+        </div>
           </NavBox>
         )}
 
@@ -960,6 +1246,34 @@ export default function App() {
                 Esqueci minha senha!
               </button>
             </form>
+
+            {/* separador social */}
+            <div className="text-center my-3">
+              <span className="text-muted">ou</span>
+            </div>
+            {/* Botões sociais — estilo do modal, lado a lado (Facebook | Google) */}
+            <div className="row g-2">
+              <div className="col-6">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center"
+                  onClick={() => entrarComProvider(facebookProvider)}
+                >
+                  <i className="bi bi-facebook me-2"></i>
+                  Entrar com Facebook
+                </button>
+              </div>
+              <div className="col-6">
+                <button
+                  type="button"
+                  className="btn btn-outline-danger w-100 d-flex align-items-center justify-content-center"
+                  onClick={() => entrarComProvider(googleProvider)}
+                >
+                  <i className="bi bi-google me-2"></i>
+                  Entrar com Google
+                </button>
+              </div>
+            </div>
           </NavBox>
         )}
 
@@ -1256,6 +1570,9 @@ export default function App() {
           />
           <Route path="/recuperar-senha" element={<PassRecoveryPage />} />
           <Route path="/confirmar-email" element={<ConfirmEmailPage />} />
+          <Route path="/privacidade" element={<Privacy />} />
+          <Route path="/termos" element={<Terms />} />
+          <Route path="/excluir-dados" element={<DataDeletion />} />
           <Route
             path="/godpleaseno"
             element={

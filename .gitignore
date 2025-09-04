@@ -1,3 +1,6 @@
 node_modules/
+# Service account (exemplo)
 backend/uaidecants-firebase-adminsdk-fbsvc-bef53e38b4.json
+# Firebase web config (frontend)
 /src/firebaseConfig.js
+src/firebaseConfig.js
