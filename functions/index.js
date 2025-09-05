@@ -15,7 +15,14 @@ exports.api = onRequest(
       timeoutSeconds: 60,
       maxInstances: 20,
       minInstances: 0,
-      secrets: ["ARROZ", "EMAIL_REMETENTE"],
+      secrets: [
+        "ARROZ",
+        "EMAIL_REMETENTE",
+        "SUPERFRETE_TOKEN",
+        "MELHORENVIO_TOKEN",
+        "MELHORENVIO_TOKEN_SANDBOX",
+        "ORIGIN_ZIP",
+      ],
     },
     (req, res) => {
       if (!cachedApp) {

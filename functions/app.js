@@ -1,3 +1,8 @@
+const USE_ME_SANDBOX = true;
+const MIN_BILLED_WEIGHT_G = 100;
+// Toggle/descrição da retirada local
+const PICKUP_ENABLED = true;
+const PICKUP_CITY = "Paracatu - MG";
 function createApp() {
   const express = require("express");
   const cors = require("cors");
@@ -668,6 +673,388 @@ function createApp() {
     } catch (err) {
       console.error("DELETE /me/addresses/:id:", err);
       res.status(500).json({success: false, message: "Erro ao excluir endereço."});
+    }
+  });
+
+  // ---------- Helpers de frete ----------
+  function parseMl(v) {
+    const m = String(v||"").match(/(\d+)\s*ml/i);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+  function estimateItemWeightG(volumeStr) {
+    // densidade média ~0.9 g/ml + embalagem por frasco (estimativas)
+    const ml = parseMl(volumeStr);
+    const liquid = Math.max(ml * 0.9, 1);
+    const pkgMap = {"2ml": 10, "5ml": 18, "8ml": 30, "15ml": 55};
+    const key = `${ml}ml`;
+    const pkg = pkgMap[key] ?? 20;
+    return Math.ceil(liquid + pkg);
+  }
+  function calcCartWeightG(itens = []) {
+    // soma + margem 20g de proteção
+    const sum = (itens || []).reduce(
+        (acc, it) =>
+          acc + estimateItemWeightG(it.volume) * (it.quantidade || 1),
+        0,
+    );
+    const g = Math.max(sum + 20, MIN_BILLED_WEIGHT_G);
+    return g;
+  }
+
+  // ---------- Frete: Superfrete + Melhor Envio ----------
+  // Converte qualquer formato de preço (string com vírgula, objeto etc.)
+  function parseMoney(v) {
+    if (v == null) return null;
+    if (typeof v === "number" && isFinite(v)) return v;
+    if (typeof v === "string") {
+      // remove símbolos e normaliza vírgula
+      const s = v.replace(/[^\d,.,-]/g, "").replace(/(\d)[.](?=\d{3}(\D|$))/g, "$1").replace(",", ".");
+      const n = parseFloat(s);
+      return isFinite(n) ? n : null;
+    }
+    if (typeof v === "object") {
+      return parseMoney(v.price ?? v.total ?? v.amount ?? v.value);
+    }
+    return null;
+  }
+
+  app.post("/shipping/quote", async (req, res) => {
+    try {
+      const {cepDestino, itens} = req.body || {};
+      if (!cepDestino || !Array.isArray(itens)) {
+        return res.status(400).json({success: false, message: "cepDestino e itens são obrigatórios."});
+      }
+
+      const originZip = process.env.ORIGIN_ZIP || "01001000"; // defina em env
+      const weightG = calcCartWeightG(itens);
+      const dims = {height: 6, width: 11, length: 16}; // cm
+
+      let results = [];
+
+      // -------- SuperFrete --------
+      try {
+        const sfToken = process.env.SUPERFRETE_TOKEN;
+        if (sfToken) {
+          const body = {
+            from: {postal_code: originZip},
+            to: {postal_code: String(cepDestino).replace(/\D/g, "")},
+            products: [
+              {
+                weight: Math.max(weightG, MIN_BILLED_WEIGHT_G) / 1000,
+                width: dims.width,
+                height: dims.height,
+                length: dims.length,
+                quantity: 1,
+              },
+            ],
+            options: {receipt: false, own_hand: false, reverse: false, non_commercial: true},
+          };
+
+          const r = await fetch("https://api.superfrete.com/api/v1/quote", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+              "Authorization": `Bearer ${sfToken}`, // alguns tenants usam Bearer
+              "X-API-KEY": sfToken, // outros usam X-API-KEY
+            },
+            body: JSON.stringify(body),
+          });
+
+          const js = await r.json();
+          const list = Array.isArray(js) ?
+            js :
+            Array.isArray(js?.data) ?
+              js.data :
+              Array.isArray(js?.results) ?
+                js.results :
+                Array.isArray(js?.quotes) ?
+                  js.quotes :
+                  [];
+
+          for (const q of list) {
+            const price =
+              parseMoney(q.price) ??
+              parseMoney(q.cost) ??
+              parseMoney(q.total) ??
+              parseMoney(q?.prices?.[0]?.price);
+
+            if (price == null) continue;
+
+            results.push({
+              source: "superfrete",
+              carrier: q.company?.name || q.carrier || q.provider || "Transportadora",
+              name: q.name || q.service || q.service_name || "",
+              service_code: q.service_code || q.id || q.service || "",
+              price,
+              delivery_range: q.delivery_range || {
+                from: q.delivery_time?.min ?? q.deadline_min,
+                to: q.delivery_time?.max ?? q.deadline_max,
+              },
+            });
+          }
+
+          if (!list?.length) console.warn("SuperFrete sem resultados:", js);
+        }
+      } catch (e) {
+        console.error("SuperFrete quote error:", e);
+      }
+
+      // -------- Melhor Envio --------
+      try {
+        const meToken = USE_ME_SANDBOX ?
+          (process.env.MELHORENVIO_TOKEN_SANDBOX || "") :
+          (process.env.MELHORENVIO_TOKEN || "");
+        const ME_BASE = USE_ME_SANDBOX ?
+          "https://sandbox.melhorenvio.com.br" :
+          "https://www.melhorenvio.com.br";
+
+        if (meToken) {
+          const body = {
+            from: {postal_code: originZip},
+            to: {postal_code: String(cepDestino).replace(/\D/g, "")},
+            products: [
+              {
+                weight: Math.max(weightG, MIN_BILLED_WEIGHT_G) / 1000,
+                width: dims.width,
+                height: dims.height,
+                length: dims.length,
+                quantity: 1,
+              },
+            ],
+            options: {receipt: false, own_hand: false, reverse: false, non_commercial: true},
+          };
+
+          const r = await fetch(`${ME_BASE}/api/v2/me/shipment/calculate`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+              "Authorization": `Bearer ${meToken}`,
+            },
+            body: JSON.stringify(body),
+          });
+
+          const js = await r.json();
+          const list = Array.isArray(js) ? js : Array.isArray(js?.data) ? js.data : [];
+
+          for (const q of list) {
+            const price =
+              parseMoney(q.price) ??
+              parseMoney(q.custom_price) ??
+              parseMoney(q.total) ??
+              parseMoney(q?.prices?.[0]?.price);
+
+            if (price == null) continue; // evita R$ 0 indevido (ex.: Mini Envios)
+
+            results.push({
+              source: "melhorenvio",
+              carrier: q.company?.name || q.carrier || "Transportadora",
+              name: q.name || q.service || q.service_name || "",
+              service_code: q.service || q.id || q.service_code || "",
+              price,
+              delivery_range: q.delivery_range || {
+                from: q.delivery_time?.min ?? q.deadline_min,
+                to: q.delivery_time?.max ?? q.deadline_max,
+              },
+            });
+          }
+
+          if (!list?.length) console.warn("MelhorEnvio sem resultados:", js);
+        }
+      } catch (e) {
+        console.error("MelhorEnvio quote error:", e);
+      }
+
+      // -------- Retirada (sempre visível) --------
+      if (PICKUP_ENABLED) {
+        results.push({
+          source: "manual",
+          carrier: "retirada",
+          name: `Retirar com Vendedor (${PICKUP_CITY})`,
+          price: 0,
+          delivery_range: null,
+          service_code: "pickup",
+          pickup: true,
+        });
+      }
+
+      // normaliza e ordena
+      results = (results || []).filter((r) => Number.isFinite(r.price));
+      results.sort((a, b) => a.price - b.price);
+
+      return res.json({success: true, weightG, dimensions: dims, quotes: results});
+    } catch (err) {
+      console.error("POST /shipping/quote:", err);
+      return res.status(500).json({success: false, message: "Falha ao cotar frete."});
+    }
+  });
+
+  // ---------- Carrinho por usuário ----------
+  app.get("/me/cart", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const ref = db.collection("perfis").doc(req.auth.uid).collection("cart").doc("current");
+      const snap = await ref.get();
+      const data = snap.exists ? snap.data() : {items: []};
+      res.json({success: true, items: Array.isArray(data.items) ? data.items : []});
+    } catch (e) {
+      console.error("GET /me/cart:", e);
+      res.status(500).json({success: false, message: "Erro ao ler carrinho."});
+    }
+  });
+
+  app.put("/me/cart", autenticarUsuarioJWT, async (req, res) => {
+    try {
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      const ref = db.collection("perfis").doc(req.auth.uid).collection("cart").doc("current");
+      await ref.set({items, updatedAt: new Date().toISOString()}, {merge: true});
+      res.json({success: true});
+    } catch (e) {
+      console.error("PUT /me/cart:", e);
+      res.status(500).json({success: false, message: "Erro ao salvar carrinho."});
+    }
+  });
+
+  // ---------- Cupons (admin) ----------
+  function normalizeCoupon(b) {
+    const code = String(b.code || "").trim().toUpperCase();
+    const type = String(b.type || "percent").toLowerCase(); // 'percent' | 'fixed'
+    const value = Number(b.value || 0);
+    const minSubtotal = Number(b.minSubtotal || 0);
+    const active = b.active !== false;
+    const expiresAt = b.expiresAt ? String(b.expiresAt) : null; // ISO
+    const requireLogin = b.requireLogin === true; // << novo campo
+    return {code, type, value, minSubtotal, active, expiresAt, requireLogin};
+  }
+
+  app.get("/admin/coupons", autenticarAdminJWT, async (_req, res) => {
+    try {
+      const snap = await db.collection("coupons").orderBy("code").get();
+      const data = snap.docs.map((d) => ({id: d.id, ...d.data()}));
+      res.json({success: true, coupons: data});
+    } catch (e) {
+      res.status(500).json({success: false, message: "Erro ao listar cupons."});
+    }
+  });
+
+  app.post("/admin/coupons", autenticarAdminJWT, async (req, res) => {
+    try {
+      const c = normalizeCoupon(req.body || {});
+      if (!c.code || !["percent", "fixed"].includes(c.type) || c.value <= 0) {
+        return res.status(400).json({success: false, message: "Dados do cupom inválidos."});
+      }
+      const ref = await db.collection("coupons").add({...c, createdAt: new Date().toISOString()});
+      res.json({success: true, id: ref.id});
+    } catch (e) {
+      res.status(500).json({success: false, message: "Erro ao criar cupom."});
+    }
+  });
+
+  app.put("/admin/coupons/:id", autenticarAdminJWT, async (req, res) => {
+    try {
+      const id = req.params.id;
+      const c = normalizeCoupon(req.body || {});
+      await db.collection("coupons").doc(id).set({...c, updatedAt: new Date().toISOString()}, {merge: true});
+      res.json({success: true});
+    } catch (e) {
+      res.status(500).json({success: false, message: "Erro ao atualizar cupom."});
+    }
+  });
+
+  app.delete("/admin/coupons/:id", autenticarAdminJWT, async (req, res) => {
+    try {
+      await db.collection("coupons").doc(req.params.id).delete();
+      res.json({success: true});
+    } catch (e) {
+      res.status(500).json({success: false, message: "Erro ao excluir cupom."});
+    }
+  });
+
+  // ---------- Validação de cupom (pública) ----------
+  app.post("/coupons/validate", async (req, res) => {
+    try {
+      const code = String(req.body?.code || "").trim().toUpperCase();
+      const subtotal = Number(req.body?.subtotal || 0);
+
+      if (!code || !(subtotal >= 0)) {
+        return res.status(400).json({
+          success: false,
+          message: "code e subtotal são obrigatórios.",
+        });
+      }
+
+      const qs = await db
+          .collection("coupons")
+          .where("code", "==", code)
+          .limit(1)
+          .get();
+
+      if (qs.empty) {
+        return res.json({success: true, valid: false, reason: "not_found"});
+      }
+
+      const c = {id: qs.docs[0].id, ...qs.docs[0].data()};
+
+      // Verifica login via Firebase ID Token (se enviado)
+      let uid = null;
+      const authHeader = String(req.headers.authorization || "");
+      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+      if (token) {
+        try {
+          const decoded = await admin.auth().verifyIdToken(token);
+          uid = decoded?.uid || null;
+        } catch {
+          uid = null;
+        }
+      }
+
+      if (c.active === false) {
+        return res.json({success: true, valid: false, reason: "inactive"});
+      }
+
+      if (c.expiresAt && new Date(c.expiresAt) < new Date()) {
+        return res.json({success: true, valid: false, reason: "expired"});
+      }
+
+      if (c.requireLogin && !uid) {
+        return res.json({success: true, valid: false, reason: "login_required"});
+      }
+
+      if (c.minSubtotal && subtotal < Number(c.minSubtotal || 0)) {
+        return res.json({
+          success: true,
+          valid: false,
+          reason: "min_subtotal",
+          minSubtotal: Number(c.minSubtotal || 0),
+        });
+      }
+
+      let discount = 0;
+      if (String(c.type) === "percent") {
+        discount = Math.max(0, (subtotal * Number(c.value)) / 100);
+      } else {
+        discount = Math.max(0, Number(c.value || 0));
+      }
+      discount = Math.min(discount, subtotal);
+      const totalAfterDiscount = subtotal - discount;
+
+      return res.json({
+        success: true,
+        valid: true,
+        coupon: {
+          id: c.id,
+          code: c.code,
+          type: c.type,
+          value: Number(c.value || 0),
+          minSubtotal: Number(c.minSubtotal || 0),
+          requireLogin: !!c.requireLogin,
+        },
+        discount,
+        totalAfterDiscount,
+      });
+    } catch (err) {
+      console.error("POST /coupons/validate:", err);
+      return res.status(500).json({success: false, message: "Falha ao validar cupom."});
     }
   });
 
